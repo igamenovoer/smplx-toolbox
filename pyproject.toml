@@ -38,12 +38,28 @@ classifiers = [
     "Topic :: Multimedia :: Graphics :: 3D Modeling",
 ]
 requires-python = ">=3.11"
-dependencies = [ "rich>=14.1.0,<15", "attrs>=25.3.0,<26"]
-
-[project.optional-dependencies]
-all = [
-    "smplx-toolbox[dev]"
+dependencies = [ 
+    "rich>=14.1.0,<15", 
+    "attrs>=25.3.0,<26",
+    # Note: PyTorch is NOT included as a dependency
+    # Users must install PyTorch themselves based on their hardware
+    # Example: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ]
+
+# [project.optional-dependencies]
+# # Development dependencies - managed by pixi instead
+# dev = [
+#     "pytest>=7.0",
+#     "pytest-cov>=4.0",
+#     "black>=23.0",
+#     "isort>=5.0",
+#     "flake8>=6.0",
+#     "mypy>=1.0",
+#     "pre-commit>=3.0"
+# ]
+# all = [
+#     "smplx-toolbox[dev]"
+# ]
 
 [project.urls]
 Homepage = "https://github.com/yourusername/smplx-toolbox"
@@ -60,29 +76,36 @@ where = ["src"]
 [tool.setuptools.package-data]
 "smplx_toolbox" = ["py.typed"]
 
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ["py311", "py312"]
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+target-version = "py311"
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["smplx_toolbox"]
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "ARG",  # flake8-unused-arguments
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long, handled by ruff format
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["smplx_toolbox"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.11"
@@ -135,8 +158,6 @@ platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
 python = ">=3.11,<3.13"
-pytorch = {version = ">=2.7", channel = "conda-forge"}
-torchvision = {channel = "conda-forge"}
 
 [tool.pixi.pypi-dependencies]
 numpy = "*"
@@ -150,12 +171,29 @@ pyyaml = "*"
 click = "*"
 smplx = "*"
 
+# Platform-specific PyTorch installation for all environments
+[tool.pixi.target.win-64.pypi-dependencies]
+torch = {index = "https://download.pytorch.org/whl/cu126"}
+torchvision = {index = "https://download.pytorch.org/whl/cu126"}
+
+[tool.pixi.target.linux-64.pypi-dependencies]
+torch = {index = "https://download.pytorch.org/whl/cu126"}
+torchvision = {index = "https://download.pytorch.org/whl/cu126"}
+
+[tool.pixi.target.osx-64.pypi-dependencies]
+torch = {index = "https://download.pytorch.org/whl/cpu"}
+torchvision = {index = "https://download.pytorch.org/whl/cpu"}
+
+[tool.pixi.target.osx-arm64.pypi-dependencies]
+torch = {index = "https://download.pytorch.org/whl/cpu"}
+torchvision = {index = "https://download.pytorch.org/whl/cpu"}
+
+# Development feature with additional dev tools
+[tool.pixi.feature.dev]
 [tool.pixi.feature.dev.pypi-dependencies]
 pytest = "*"
 pytest-cov = "*"
-black = "*"
-isort = "*"
-flake8 = "*"
+ruff = "*"
 mypy = "*"
 pre-commit = "*"
 mkdocs-material = "*"
@@ -169,11 +207,10 @@ dev = {features = ["dev"], solve-group = "default"}
 install-dev = "pip install -e ."
 test = "pytest"
 test-cov = "pytest --cov=smplx_toolbox --cov-report=html"
-lint = "flake8 src tests scripts"
-format = "black src tests scripts"
-format-check = "black --check src tests scripts"
-sort-imports = "isort src tests scripts"
-sort-imports-check = "isort --check-only src tests scripts"
+lint = "ruff check src tests scripts"
+lint-fix = "ruff check --fix src tests scripts"
+format = "ruff format src tests scripts"
+format-check = "ruff format --check src tests scripts"
 type-check = "mypy src"
 pre-commit-install = "pre-commit install"
 pre-commit-run = "pre-commit run --all-files"
@@ -183,7 +220,7 @@ build = "python -m build"
 clean = "python -c \"import shutil; shutil.rmtree('dist', ignore_errors=True); shutil.rmtree('build', ignore_errors=True)\""
 
 # Quality assurance
-qa = {depends-on = ["format-check", "sort-imports-check", "lint", "type-check", "test"]}
+qa = {depends-on = ["format-check", "lint", "type-check", "test"]}
 
 # Documentation tasks
 docs-serve = "mkdocs serve"
@@ -192,5 +229,5 @@ docs-build = "mkdocs build"
 # Package management
 upgrade-deps = "pip list --outdated"
 
-[dependency-groups]
-dev = [ "ipykernel>=6.30.1,<7", "rich>=14.1.0,<15", "attrs>=25.3.0,<26"]
+# [dependency-groups]
+# dev = [ "ipykernel>=6.30.1,<7", "rich>=14.1.0,<15", "attrs>=25.3.0,<26", "pyvista>=0.46.3,<0.47", "pyvistaqt>=0.11.3,<0.12", "pyqt5>=5.15.11,<6"]

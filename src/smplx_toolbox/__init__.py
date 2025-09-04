@@ -11,8 +11,8 @@ __email__ = "contact@example.com"
 # Core imports
 from .core import *
 from .optimization import *
-from .visualization import *
 from .utils import *
+from .visualization import *
 
 __all__ = [
     "__version__",

@@ -21,11 +21,12 @@ Usage
         import smplx
         from smplx_toolbox.core.smplx_model import SMPLXModel
 
+        # Create base model and wrapper
         base = smplx.create("./models", model_type="smplx", gender="neutral")
         wrapper = SMPLXModel.from_smplx(base)
 
         # Case 1: Use precomputed output (preferred when you already did a forward)
-        output = base(return_verts=True)
+        output = wrapper.base_model(return_verts=True)
         mesh = wrapper.to_mesh(output)
 
         # Case 2: Ask wrapper to run a neutral forward (no params) for you
@@ -36,12 +37,12 @@ Usage
 
 from __future__ import annotations
 
-from typing import Sequence, Optional, Type, TypeVar, Dict, Any, Tuple
-import torch
+from collections.abc import Sequence
+from typing import TypeVar
 
 import numpy as np
-import trimesh
 import smplx
+import trimesh
 from smplx.utils import SMPLXOutput
 
 __all__ = ["SMPLXModel"]
@@ -62,12 +63,21 @@ class SMPLXModel:
     :class:`trimesh.Trimesh` from an already computed model output, or from a
     neutral (identity) forward pass when no output is supplied.
 
+    Coordinate System
+    -----------------
+    This wrapper preserves the standard SMPL-X coordinate system:
+    * Y-axis: up (vertical)
+    * Z-axis: forward (facing direction)
+    * X-axis: right (from model's perspective)
+    * Units: meters
+
     Notes
     -----
     * Construction requires an existing SMPL-X model via :meth:`from_smplx`.
     * Member variables follow the project convention with an ``m_`` prefix.
     * Read-only property accessors expose underlying model and faces.
     * All validation errors raise explicit exceptions.
+    * For forward passes, use the base_model directly: wrapper.base_model(...)
 
     Unsupported Models
     ------------------
@@ -79,16 +89,14 @@ class SMPLXModel:
 
     def __init__(self) -> None:
         """Initialize empty wrapper with no base model reference yet."""
-        self.m_base: Optional[SmplModelType] = None
-        self.m_cached_neutral_output: Optional[SmplOutput] = None
-        self.m_joint_names: Optional[list[str]] = None
-        self.m_coordinate_system: str = "y_up"  # default SMPL-X coordinate system
+        self.m_base: SmplModelType | None = None
+        self.m_joint_names: list[str] | None = None
 
     # ------------------------------------------------------------------
     # Factories
     # ------------------------------------------------------------------
     @classmethod
-    def from_smplx(cls: Type[T], model: SmplModelType) -> T:
+    def from_smplx(cls: type[T], model: SmplModelType) -> T:
         """Create wrapper from an existing SMPL-X model.
 
         Parameters
@@ -116,7 +124,7 @@ class SMPLXModel:
     # Properties (read-only)
     # ------------------------------------------------------------------
     @property
-    def base(self) -> SmplModelType:
+    def base_model(self) -> SmplModelType:
         """Underlying smplx model (read-only).
 
         Raises
@@ -131,17 +139,29 @@ class SMPLXModel:
     @property
     def faces(self) -> np.ndarray:
         """Triangle faces of the underlying model."""
-        return self.base.faces
+        return self.base_model.faces
 
     @property
     def num_joints(self) -> int:
         """Number of joints in the model."""
-        return self.base.get_num_joints()
+        # SMPL-X has 55 joints by default, plus additional keypoints
+        # The actual number depends on keypoint usage
+        if hasattr(self.base_model, "get_num_joints"):
+            return self.base_model.get_num_joints()
+        elif hasattr(self.base_model, "J_regressor"):
+            return self.base_model.J_regressor.shape[0]
+        else:
+            return 55  # SMPL-X default
 
     @property
     def num_vertices(self) -> int:
         """Number of vertices in the model."""
-        return self.base.get_num_verts()
+        if hasattr(self.base_model, "get_num_verts"):
+            return self.base_model.get_num_verts()
+        elif hasattr(self.base_model, "v_template"):
+            return self.base_model.v_template.shape[0]
+        else:
+            return 10475  # SMPL-X default
 
     @property
     def joint_names(self) -> list[str]:
@@ -178,174 +198,21 @@ class SMPLXModel:
             ]
         return self.m_joint_names
 
-    @property
-    def coordinate_system(self) -> str:
-        """Current coordinate system ('y_up' or 'z_up')."""
-        return self.m_coordinate_system
-
-    # ------------------------------------------------------------------
-    # Setter methods
-    # ------------------------------------------------------------------
-    def set_coordinate_system(self, system: str) -> None:
-        """Set the coordinate system for vertex/joint outputs.
-
-        Parameters
-        ----------
-        system : str
-            Either 'y_up' (SMPL-X default) or 'z_up' (Blender/Unity).
-        """
-        if system not in ("y_up", "z_up"):
-            raise ValueError("Coordinate system must be 'y_up' or 'z_up'")
-        self.m_coordinate_system = system
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    def forward(
-        self,
-        betas: torch.Tensor | np.ndarray | None = None,
-        body_pose: torch.Tensor | np.ndarray | None = None,
-        global_orient: torch.Tensor | np.ndarray | None = None,
-        transl: torch.Tensor | np.ndarray | None = None,
-        expression: torch.Tensor | np.ndarray | None = None,
-        jaw_pose: torch.Tensor | np.ndarray | None = None,
-        left_hand_pose: torch.Tensor | np.ndarray | None = None,
-        right_hand_pose: torch.Tensor | np.ndarray | None = None,
-        return_joints: bool = False,
-        **kwargs: Any,
-    ) -> SmplOutput:
-        """Forward pass through the SMPL-X model with parameter control.
-
-        Parameters
-        ----------
-        betas : tensor or array, optional
-            Shape parameters (10 values).
-        body_pose : tensor or array, optional
-            Body pose parameters (21 joints × 3).
-        global_orient : tensor or array, optional
-            Global orientation (1 × 3).
-        transl : tensor or array, optional
-            Global translation (3 values).
-        expression : tensor or array, optional
-            Facial expression parameters (10 values).
-        jaw_pose : tensor or array, optional
-            Jaw pose (1 × 3).
-        left_hand_pose : tensor or array, optional
-            Left hand pose parameters.
-        right_hand_pose : tensor or array, optional
-            Right hand pose parameters.
-        return_joints : bool, optional
-            Whether to return joint positions in output.
-        **kwargs : Any
-            Additional arguments passed to the underlying model.
-
-        Returns
-        -------
-        SMPLXOutput
-            Model output with vertices, joints, and other data.
-        """
-
-        # Convert numpy arrays to torch tensors if needed
-        def to_tensor(x: torch.Tensor | np.ndarray | None) -> torch.Tensor | None:
-            if x is None:
-                return None
-            if isinstance(x, np.ndarray):
-                return torch.from_numpy(x).float()
-            return x
-
-        # Prepare parameters
-        params = {
-            "betas": to_tensor(betas),
-            "body_pose": to_tensor(body_pose),
-            "global_orient": to_tensor(global_orient),
-            "transl": to_tensor(transl),
-            "expression": to_tensor(expression),
-            "jaw_pose": to_tensor(jaw_pose),
-            "left_hand_pose": to_tensor(left_hand_pose),
-            "right_hand_pose": to_tensor(right_hand_pose),
-            "return_verts": True,
-            "return_joints": return_joints,
-        }
-
-        # Filter out None values
-        params = {
-            k: v for k, v in params.items() if v is not None or k.startswith("return_")
-        }
-        params.update(kwargs)
-
-        # Forward pass
-        output = self.base(**params)
-
-        # Apply coordinate transformation if needed
-        if self.m_coordinate_system == "z_up":
-            output = self._transform_to_z_up(output)
-
-        return output
-
-    def _transform_to_z_up(self, output: SmplOutput) -> SmplOutput:
-        """Transform output from Y-up to Z-up coordinate system.
-
-        Parameters
-        ----------
-        output : SMPLXOutput
-            Original model output in Y-up coordinates.
-
-        Returns
-        -------
-        SMPLXOutput
-            Transformed output in Z-up coordinates.
-        """
-
-        # Y-up to Z-up: swap Y and Z, negate new Y
-        # Transform matrix: [[1,0,0], [0,0,1], [0,-1,0]]
-        def transform_coords(tensor: torch.Tensor) -> torch.Tensor:
-            if tensor is None:
-                return tensor
-            x, y, z = tensor[..., 0], tensor[..., 1], tensor[..., 2]
-            return torch.stack([x, -z, y], dim=-1)
-
-        # Transform vertices and joints
-        if hasattr(output, "vertices") and output.vertices is not None:
-            output.vertices = transform_coords(output.vertices)
-        if hasattr(output, "joints") and output.joints is not None:
-            output.joints = transform_coords(output.joints)
-
-        return output
-
-    def get_neutral_pose(self, use_cache: bool = True) -> SmplOutput:
-        """Get the neutral (T-pose) output of the model.
-
-        Parameters
-        ----------
-        use_cache : bool, optional
-            Whether to use cached result if available (default True).
-
-        Returns
-        -------
-        SMPLXOutput
-            Model output in neutral pose.
-        """
-        if use_cache and self.m_cached_neutral_output is not None:
-            return self.m_cached_neutral_output
-
-        output = self.forward(return_joints=True)
-
-        if use_cache:
-            self.m_cached_neutral_output = output
-
-        return output
 
     def get_joint_positions(
         self,
-        output: SmplOutput | None = None,
+        output: SmplOutput,
         batch_index: int = 0,
     ) -> np.ndarray:
         """Extract joint positions from model output.
 
         Parameters
         ----------
-        output : SMPLXOutput, optional
-            Model output. If None, uses neutral pose.
+        output : SMPLXOutput
+            Model output from calling the base_model.
         batch_index : int, optional
             Batch element index (default 0).
 
@@ -354,12 +221,9 @@ class SMPLXModel:
         np.ndarray
             Joint positions of shape (num_joints, 3).
         """
-        if output is None:
-            output = self.get_neutral_pose()
-
         if not hasattr(output, "joints") or output.joints is None:
             raise ValueError(
-                "No joints in output. Call forward() with return_joints=True"
+                "No joints in output. Call base_model with return_joints=True"
             )
 
         joints = output.joints.detach().cpu().numpy()
@@ -413,7 +277,8 @@ class SMPLXModel:
             If base model reference is missing.
         """
         if output is None:
-            output = self.get_neutral_pose()
+            # Run neutral forward pass
+            output = self.base_model(return_verts=True)
         verts_t = output.vertices  # type: ignore[attr-defined]
         if verts_t is None:  # pragma: no cover - defensive
             raise ValueError(
@@ -452,7 +317,3 @@ class SMPLXModel:
             if mesh.visual is not None:  # type: ignore[truthy-bool]
                 mesh.visual.vertex_colors = rgba  # type: ignore[attr-defined]
         return mesh
-
-    def __repr__(self) -> str:  # pragma: no cover
-        cls_name = self.m_base.__class__.__name__ if self.m_base is not None else "None"
-        return f"SMPLXModel(base={cls_name})"

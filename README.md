@@ -64,19 +64,64 @@ The model uses a learned linear blend skinning approach with pose-dependent corr
 
 ## Getting Started
 
-> **Note**: This project is currently in the planning phase. Implementation details and APIs are being designed and will be added progressively.
+> **Note**: This project is currently in development. The package does **NOT** include PyTorch as a dependency - users must install PyTorch separately.
 
 ### Prerequisites
-- Python 3.8+
-- PyTorch (for optimization and neural network components)
+- Python 3.11+
+- **PyTorch 2.0+** (must be installed separately - see installation instructions below)
 - NumPy, SciPy (for numerical computations)
-- Trimesh, Open3D (for 3D mesh processing)
+- Trimesh (for 3D mesh processing)
 
 ### Installation
+
+**Step 1: Install PyTorch**
+
+The package requires PyTorch but does not install it automatically. Choose the appropriate installation based on your hardware:
+
 ```bash
-# Installation instructions will be provided once the initial implementation is ready
-pip install smplx-toolbox  # Coming soon
+# For NVIDIA GPU users (CUDA 12.6)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+
+# For CPU-only users
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# For other CUDA versions, visit: https://pytorch.org/get-started/locally/
 ```
+
+**Step 2: Install SMPL-X Toolbox**
+
+```bash
+pip install smplx-toolbox
+```
+
+**Step 3: Verify Installation**
+
+```python
+import torch
+import smplx_toolbox
+
+print(f"PyTorch version: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print("✅ SMPL-X Toolbox ready!")
+```
+
+### Development Setup
+
+For development with pixi (includes automatic PyTorch configuration):
+
+```bash
+# Clone the repository
+git clone https://github.com/igamenovoer/smplx-toolbox.git
+cd smplx-toolbox
+
+# Install development environment (PyTorch configured automatically)
+pixi install -e dev
+
+# Verify setup
+pixi run -e dev python -c "import torch; print(f'PyTorch {torch.__version__}'); print(f'CUDA: {torch.cuda.is_available()}')"
+```
+
+For detailed PyTorch installation instructions, see [docs/pytorch-installation.md](docs/pytorch-installation.md).
 
 ## Contributing
 
