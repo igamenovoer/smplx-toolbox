@@ -1,0 +1,94 @@
+{
+  "version": "2.0.0",
+  "source": "project",
+  "metadata": {
+    "version": "2.0.0",
+    "description": "project 级资源注册表",
+    "createdAt": "2025-09-04T08:38:17.049Z",
+    "updatedAt": "2025-09-04T08:38:17.052Z",
+    "resourceCount": 5
+  },
+  "resources": [
+    {
+      "id": "animation-dev",
+      "source": "project",
+      "protocol": "role",
+      "name": "Animation Dev 角色",
+      "description": "专业角色，提供特定领域的专业能力",
+      "reference": "@project://.promptx/resource/role/animation-dev/animation-dev.role.md",
+      "metadata": {
+        "createdAt": "2025-09-04T08:38:17.050Z",
+        "updatedAt": "2025-09-04T08:38:17.050Z",
+        "scannedAt": "2025-09-04T08:38:17.050Z",
+        "path": "role/animation-dev/animation-dev.role.md"
+      }
+    },
+    {
+      "id": "3d-human-workflow",
+      "source": "project",
+      "protocol": "execution",
+      "name": "3d Human Workflow 执行模式",
+      "description": "执行模式，定义具体的行为模式",
+      "reference": "@project://.promptx/resource/role/animation-dev/execution/3d-human-workflow.execution.md",
+      "metadata": {
+        "createdAt": "2025-09-04T08:38:17.051Z",
+        "updatedAt": "2025-09-04T08:38:17.051Z",
+        "scannedAt": "2025-09-04T08:38:17.051Z",
+        "path": "role/animation-dev/execution/3d-human-workflow.execution.md"
+      }
+    },
+    {
+      "id": "blender-development",
+      "source": "project",
+      "protocol": "execution",
+      "name": "Blender Development 执行模式",
+      "description": "执行模式，定义具体的行为模式",
+      "reference": "@project://.promptx/resource/role/animation-dev/execution/blender-development.execution.md",
+      "metadata": {
+        "createdAt": "2025-09-04T08:38:17.051Z",
+        "updatedAt": "2025-09-04T08:38:17.051Z",
+        "scannedAt": "2025-09-04T08:38:17.051Z",
+        "path": "role/animation-dev/execution/blender-development.execution.md"
+      }
+    },
+    {
+      "id": "animation-3d-thinking",
+      "source": "project",
+      "protocol": "thought",
+      "name": "Animation 3d Thinking 思维模式",
+      "description": "思维模式，指导AI的思考方式",
+      "reference": "@project://.promptx/resource/role/animation-dev/thought/animation-3d-thinking.thought.md",
+      "metadata": {
+        "createdAt": "2025-09-04T08:38:17.051Z",
+        "updatedAt": "2025-09-04T08:38:17.051Z",
+        "scannedAt": "2025-09-04T08:38:17.051Z",
+        "path": "role/animation-dev/thought/animation-3d-thinking.thought.md"
+      }
+    },
+    {
+      "id": "smplx-modeling",
+      "source": "project",
+      "protocol": "thought",
+      "name": "Smplx Modeling 思维模式",
+      "description": "思维模式，指导AI的思考方式",
+      "reference": "@project://.promptx/resource/role/animation-dev/thought/smplx-modeling.thought.md",
+      "metadata": {
+        "createdAt": "2025-09-04T08:38:17.052Z",
+        "updatedAt": "2025-09-04T08:38:17.052Z",
+        "scannedAt": "2025-09-04T08:38:17.052Z",
+        "path": "role/animation-dev/thought/smplx-modeling.thought.md"
+      }
+    }
+  ],
+  "stats": {
+    "totalResources": 5,
+    "byProtocol": {
+      "role": 1,
+      "execution": 2,
+      "thought": 2
+    },
+    "bySource": {
+      "project": 5
+    }
+  }
+}

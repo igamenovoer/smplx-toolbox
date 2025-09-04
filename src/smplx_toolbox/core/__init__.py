@@ -2,12 +2,6 @@
 Core SMPL-X functionality and model handling.
 """
 
-from .model import SMPLXModel
-from .parameters import SMPLXParameters
-from .mesh import SMPLXMesh
+from .smplx_model import SMPLXModel
 
-__all__ = [
-    "SMPLXModel",
-    "SMPLXParameters", 
-    "SMPLXMesh",
-]
+__all__ = ["SMPLXModel"]

@@ -86,6 +86,7 @@ smplx-toolbox visualize parameters.json
 - [Quick Start Tutorial](https://yourusername.github.io/smplx-toolbox/quickstart/)
 - [API Reference](https://yourusername.github.io/smplx-toolbox/api/)
 - [Examples](https://yourusername.github.io/smplx-toolbox/examples/)
+- [Project Roadmap](../ROADMAP.md)
 
 ## Contributing
 

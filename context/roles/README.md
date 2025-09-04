@@ -6,6 +6,10 @@ This directory contains role-specific system prompts, memory, and context for di
 
 Each role has its own subdirectory with specialized knowledge and capabilities:
 
+### Available Roles
+
+- **3d-human-modeling-developer/** - Senior Python developer with expertise in SMPL-X models, deformable meshes, computer graphics theory, DCC tool integration (Blender plugins), and skeletal animation
+
 ### Planned Roles
 
 - **backend-developer/** - Python development, API design, optimization algorithms

@@ -31,38 +31,16 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Multimedia :: Graphics :: 3D Modeling",
 ]
-requires-python = ">=3.8"
-dependencies = [
-    "numpy>=1.20.0",
-    "scipy>=1.7.0",
-    "torch>=1.10.0",
-    "trimesh>=3.9.0",
-    "opencv-python>=4.5.0",
-    "pillow>=8.0.0",
-    "tqdm>=4.60.0",
-    "pyyaml>=5.4.0",
-    "click>=8.0.0",
-]
+requires-python = ">=3.11"
+dependencies = [ "rich>=14.1.0,<15", "attrs>=25.3.0,<26"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=6.0",
-    "pytest-cov>=3.0",
-    "black>=22.0",
-    "isort>=5.10",
-    "flake8>=4.0",
-    "mypy>=0.910",
-    "pre-commit>=2.15",
-]
 all = [
     "smplx-toolbox[dev]"
 ]
@@ -84,7 +62,7 @@ where = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py311", "py312"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -107,7 +85,7 @@ line_length = 88
 known_first_party = ["smplx_toolbox"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -152,29 +130,35 @@ markers = [
 # Pixi configuration
 [tool.pixi.project]
 name = "smplx-toolbox"
-channels = ["conda-forge", "pytorch", "nvidia"]
+channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
-python = ">=3.8,<3.13"
-numpy = ">=1.20.0"
-scipy = ">=1.7.0"
-pytorch = ">=1.10.0"
-trimesh = ">=3.9.0"
-opencv = ">=4.5.0"
-pillow = ">=8.0.0"
-tqdm = ">=4.60.0"
-pyyaml = ">=5.4.0"
-click = ">=8.0.0"
+python = ">=3.11,<3.13"
+pytorch = {version = ">=2.7", channel = "conda-forge"}
+torchvision = {channel = "conda-forge"}
 
-[tool.pixi.feature.dev.dependencies]
-pytest = ">=6.0"
-pytest-cov = ">=3.0"
-black = ">=22.0"
-isort = ">=5.10"
-flake8 = ">=4.0"
-mypy = ">=0.910"
-pre-commit = ">=2.15"
+[tool.pixi.pypi-dependencies]
+numpy = "*"
+scipy = "*"
+trimesh = "*"
+imageio = "*"
+opencv-python = "*"
+pillow = "*"
+tqdm = "*"
+pyyaml = "*"
+click = "*"
+smplx = "*"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+pytest = "*"
+pytest-cov = "*"
+black = "*"
+isort = "*"
+flake8 = "*"
+mypy = "*"
+pre-commit = "*"
+mkdocs-material = "*"
 
 [tool.pixi.environments]
 default = {solve-group = "default"}
@@ -201,5 +185,12 @@ clean = "python -c \"import shutil; shutil.rmtree('dist', ignore_errors=True); s
 # Quality assurance
 qa = {depends-on = ["format-check", "sort-imports-check", "lint", "type-check", "test"]}
 
+# Documentation tasks
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+
 # Package management
 upgrade-deps = "pip list --outdated"
+
+[dependency-groups]
+dev = [ "ipykernel>=6.30.1,<7", "rich>=14.1.0,<15", "attrs>=25.3.0,<26"]

@@ -2,3 +2,6 @@
 	path = .magic-context
 	url = git@github.com:igamenovoer/magic-context.git
 	branch = main
+[submodule "context/refcode/smplx"]
+	path = context/refcode/smplx
+	url = https://github.com/vchoutas/smplx.git

@@ -1,0 +1,7 @@
+# Ignore SMPL-X model files
+*.pkl
+*.npy
+*.npz
+*.pth
+*.pt
+*.ckpt

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<memory>
+  <item id="mem_1756975363516_n7ziz9fz9" time="2025/09/04 16:42">
+    <content>
+      SMPL-X Toolbox核心模型实现增强:
+    
+      ## 已完成的SMPLXModel增强功能:
+    
+      1. **参数控制系统**
+      - 新增forward()方法，支持所有SMPL-X参数的直接控制
+      - 自动转换numpy数组到PyTorch张量
+      - 支持betas、body_pose、global_orient、expression等全部参数
+    
+      2. **坐标系转换**
+      - 实现Y-up到Z-up坐标系转换（Blender/Unity兼容）
+      - 转换矩阵: [[1,0,0], [0,0,1], [0,-1,0]]
+      - set_coordinate_system()方法动态切换
+    
+      3. **关节信息提取**
+      - joint_names属性提供55个关节的标准命名
+      - get_joint_positions()方法提取关节3D位置
+      - num_joints和num_vertices属性快速获取模型统计
+    
+      4. **性能优化**
+      - 中性姿态缓存机制(m_cached_neutral_output)
+      - get_neutral_pose()避免重复计算
+      - 批处理支持和向量化操作
+    
+      5. **设计原则**
+      - 保持极简主义，不重复官方smplx API
+      - 成员变量使用m_前缀
+      - 只读属性使用@property装饰器
+      - 显式setter方法进行状态修改
+    
+      代码位置: src/smplx_toolbox/core/smpl_model.py
+      测试状态: 格式化通过，类型检查有预期的外部库警告
+    </content>
+    <tags>#其他</tags>
+  </item>
+  <item id="mem_1756975638812_46ien7cno" time="2025/09/04 16:47">
+    <content>
+      SMPL-X Library深度知识库:
+    
+      ## 核心接口和类结构
+    
+      ### SMPL-X模型层级
+      - SMPL: 基础身体模型，23个关节，10个形状参数
+      - SMPL+H: 添加详细手部，使用MANO集成
+      - SMPL-X: 完整表达模型，55个关节+面部表情+手部细节
+      - MANO: 独立手部模型，15个关节
+      - FLAME: 独立面部模型
+    
+      ### SMPLX类核心参数
+      ```python
+      # 初始化参数
+      - model_path: 模型文件路径
+      - num_expression_coeffs: 表情系数数量(默认10)
+      - use_face_contour: 是否计算面部轮廓关键点
+      - use_pca: 手部使用PCA还是完整关节
+      - num_pca_comps: PCA组件数量(默认6)
+      - flat_hand_mean: 平手还是自然手势
+    
+      # forward参数维度
+      - betas: (B, 10) 形状参数
+      - body_pose: (B, 63) 身体姿态，21关节×3
+      - global_orient: (B, 3) 根节点朝向
+      - expression: (B, 10) 面部表情
+      - left/right_hand_pose: PCA模式(B,6)或完整(B,15,3)
+      - jaw_pose: (B, 3) 下颌姿态
+      - leye/reye_pose: (B, 3) 眼球姿态
+      ```
+    
+      ### 输出数据结构
+      SMPLXOutput包含:
+      - vertices: (B, 10475, 3) 网格顶点
+      - joints: (B, 127, 3) 关节+关键点
+      - v_shaped: 形状混合后的模板顶点
+      - 所有输入参数的回传
+    
+      ### 坐标系和单位
+      - 默认Y-up坐标系，米为单位
+      - Blender/Unity需要Z-up转换: [x,-z,y]
+      - 关节旋转使用轴角表示(axis-angle)
+    
+      ### 关节层级结构
+      骨盆为根节点，包含:
+      - 身体链: 脊柱→颈部→头部
+      - 腿部链: 髋→膝→踝→脚
+      - 手臂链: 锁骨→肩→肘→腕→手指(15关节)
+      - 面部: 下颌、左眼、右眼
+    
+      知识库位置: context/hints/smplx-kb/intro-smplx.md
+      最后更新: 2025-09-04
+    </content>
+    <tags>#其他</tags>
+  </item>
+</memory>
