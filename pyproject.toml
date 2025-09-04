@@ -1,0 +1,205 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smplx-toolbox"
+version = "0.1.0"
+description = "A comprehensive collection of developer utilities for working with the SMPL-X human parametric model"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "SMPL-X Toolbox Contributors", email = "contact@example.com"}
+]
+maintainers = [
+    {name = "SMPL-X Toolbox Contributors", email = "contact@example.com"}
+]
+keywords = [
+    "smplx", 
+    "3d", 
+    "human-modeling", 
+    "parametric-model", 
+    "computer-vision", 
+    "graphics",
+    "animation",
+    "optimization"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "torch>=1.10.0",
+    "trimesh>=3.9.0",
+    "opencv-python>=4.5.0",
+    "pillow>=8.0.0",
+    "tqdm>=4.60.0",
+    "pyyaml>=5.4.0",
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=3.0",
+    "black>=22.0",
+    "isort>=5.10",
+    "flake8>=4.0",
+    "mypy>=0.910",
+    "pre-commit>=2.15",
+]
+all = [
+    "smplx-toolbox[dev]"
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/smplx-toolbox"
+Documentation = "https://yourusername.github.io/smplx-toolbox"
+Repository = "https://github.com/yourusername/smplx-toolbox"
+Issues = "https://github.com/yourusername/smplx-toolbox/issues"
+
+[project.scripts]
+smplx-toolbox = "smplx_toolbox.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"smplx_toolbox" = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["smplx_toolbox"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "trimesh.*", 
+    "cv2.*",
+    "open3d.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=smplx_toolbox",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# Pixi configuration
+[tool.pixi.project]
+name = "smplx-toolbox"
+channels = ["conda-forge", "pytorch", "nvidia"]
+platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
+
+[tool.pixi.dependencies]
+python = ">=3.8,<3.13"
+numpy = ">=1.20.0"
+scipy = ">=1.7.0"
+pytorch = ">=1.10.0"
+trimesh = ">=3.9.0"
+opencv = ">=4.5.0"
+pillow = ">=8.0.0"
+tqdm = ">=4.60.0"
+pyyaml = ">=5.4.0"
+click = ">=8.0.0"
+
+[tool.pixi.feature.dev.dependencies]
+pytest = ">=6.0"
+pytest-cov = ">=3.0"
+black = ">=22.0"
+isort = ">=5.10"
+flake8 = ">=4.0"
+mypy = ">=0.910"
+pre-commit = ">=2.15"
+
+[tool.pixi.environments]
+default = {solve-group = "default"}
+dev = {features = ["dev"], solve-group = "default"}
+
+[tool.pixi.tasks]
+# Development tasks
+install-dev = "pip install -e ."
+test = "pytest"
+test-cov = "pytest --cov=smplx_toolbox --cov-report=html"
+lint = "flake8 src tests scripts"
+format = "black src tests scripts"
+format-check = "black --check src tests scripts"
+sort-imports = "isort src tests scripts"
+sort-imports-check = "isort --check-only src tests scripts"
+type-check = "mypy src"
+pre-commit-install = "pre-commit install"
+pre-commit-run = "pre-commit run --all-files"
+
+# Build tasks
+build = "python -m build"
+clean = "python -c \"import shutil; shutil.rmtree('dist', ignore_errors=True); shutil.rmtree('build', ignore_errors=True)\""
+
+# Quality assurance
+qa = {depends-on = ["format-check", "sort-imports-check", "lint", "type-check", "test"]}
+
+# Package management
+upgrade-deps = "pip list --outdated"

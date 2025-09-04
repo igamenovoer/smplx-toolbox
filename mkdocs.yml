@@ -1,0 +1,96 @@
+site_name: SMPL-X Toolbox
+site_description: A comprehensive collection of developer utilities for working with the SMPL-X human parametric model
+site_url: https://yourusername.github.io/smplx-toolbox
+repo_url: https://github.com/yourusername/smplx-toolbox
+repo_name: yourusername/smplx-toolbox
+
+theme:
+  name: material
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: installation.md
+    - Quick Start: quickstart.md
+    - Configuration: configuration.md
+  - User Guide:
+    - Core Concepts: guide/concepts.md
+    - Optimization: guide/optimization.md
+    - Visualization: guide/visualization.md
+    - Format Conversion: guide/conversion.md
+  - API Reference:
+    - Core: api/core.md
+    - Optimization: api/optimization.md
+    - Visualization: api/visualization.md
+    - Utils: api/utils.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Architecture: development/architecture.md
+    - Testing: development/testing.md
+  - Examples:
+    - Basic Usage: examples/basic.md
+    - Optimization Examples: examples/optimization.md
+    - Visualization Examples: examples/visualization.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_object_full_path: false
+            show_category_heading: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yourusername/smplx-toolbox
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/smplx-toolbox/
