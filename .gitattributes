@@ -1,2 +1,207 @@
-# SCM syntax highlighting & preventing 3-way merges
-pixi.lock merge=binary linguist-language=YAML linguist-generated=true
+# Git line ending configuration for cross-platform development
+# This ensures consistent line endings across Windows, Linux, and macOS
+
+# Default behavior: Auto-detect text files and normalize line endings to LF in repo
+* text=auto eol=lf
+
+# Source code files - always LF
+*.py text eol=lf
+*.pyx text eol=lf
+*.pxd text eol=lf
+*.pyi text eol=lf
+*.py3 text eol=lf
+*.pyw text eol=lf
+
+# Shell scripts - must be LF for proper execution on Linux
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
+*.fish text eol=lf
+
+# Configuration files - LF
+*.json text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+.editorconfig text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.gitmodules text eol=lf
+.prettierrc text eol=lf
+.eslintrc text eol=lf
+.flake8 text eol=lf
+.pylintrc text eol=lf
+Dockerfile* text eol=lf
+Makefile text eol=lf
+requirements*.txt text eol=lf
+pyproject.toml text eol=lf
+setup.cfg text eol=lf
+setup.py text eol=lf
+
+# Documentation - LF
+*.md text eol=lf
+*.rst text eol=lf
+*.txt text eol=lf
+README* text eol=lf
+LICENSE* text eol=lf
+CHANGELOG* text eol=lf
+AUTHORS* text eol=lf
+CONTRIBUTING* text eol=lf
+TODO* text eol=lf
+
+# Web files - LF
+*.html text eol=lf
+*.htm text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.sass text eol=lf
+*.less text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.vue text eol=lf
+*.xml text eol=lf
+*.svg text eol=lf
+
+# Data files - LF
+*.csv text eol=lf
+*.tsv text eol=lf
+*.sql text eol=lf
+
+# Jupyter notebooks - LF
+*.ipynb text eol=lf
+
+# Windows-specific files - CRLF (if needed)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files - no line ending conversion
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.bmp binary
+*.tiff binary
+*.tif binary
+
+# Model and data files - binary
+*.pkl binary
+*.pickle binary
+*.npz binary
+*.npy binary
+*.h5 binary
+*.hdf5 binary
+*.pth binary
+*.pt binary
+*.onnx binary
+*.pb binary
+*.tflite binary
+*.caffemodel binary
+*.weights binary
+*.model binary
+*.ckpt binary
+*.safetensors binary
+
+# Archive files - binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.rar binary
+*.7z binary
+
+# Media files - binary
+*.mp3 binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.mkv binary
+*.webm binary
+*.wav binary
+*.flac binary
+*.ogg binary
+
+# Fonts - binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+
+# Documents - binary
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+*.odt binary
+*.ods binary
+*.odp binary
+
+# Compiled files - binary
+*.pyc binary
+*.pyo binary
+*.pyd binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.exe binary
+*.app binary
+*.o binary
+*.a binary
+*.lib binary
+*.class binary
+*.jar binary
+*.war binary
+
+# 3D model files - binary
+*.obj text eol=lf
+*.mtl text eol=lf
+*.ply text eol=lf
+*.stl binary
+*.fbx binary
+*.dae text eol=lf
+*.gltf text eol=lf
+*.glb binary
+*.usd binary
+*.usda text eol=lf
+*.usdc binary
+*.usdz binary
+*.blend binary
+*.3ds binary
+*.max binary
+
+# SMPL-X specific files
+*.npz binary
+*.pkl binary
+*.json text eol=lf
+*_body_model.pkl binary
+*_body_model.npz binary
+
+# SCM files - special handling
+pixi.lock merge=binary linguist-language=YAML linguist-generated=true text eol=lf
+poetry.lock text eol=lf linguist-generated=true
+package-lock.json text eol=lf linguist-generated=true
+yarn.lock text eol=lf linguist-generated=true
+Pipfile.lock text eol=lf linguist-generated=true
+
+# Git files
+.gitkeep text eol=lf
+.gitconfig text eol=lf
+
+# CI/CD files
+.travis.yml text eol=lf
+.gitlab-ci.yml text eol=lf
+azure-pipelines.yml text eol=lf
+.github/**/*.yml text eol=lf
+.github/**/*.yaml text eol=lf

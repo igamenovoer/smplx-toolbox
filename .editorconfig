@@ -1,0 +1,82 @@
+# EditorConfig helps maintain consistent coding styles across different editors and IDEs
+# https://editorconfig.org
+
+# Top-most EditorConfig file
+root = true
+
+# Default settings for all files
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Python files
+[*.{py,pyw,pyx,pxd,pyi}]
+indent_size = 4
+max_line_length = 88
+
+# YAML files
+[*.{yml,yaml}]
+indent_size = 2
+
+# TOML files
+[*.toml]
+indent_size = 4
+
+# JSON files
+[*.json]
+indent_size = 2
+
+# Markdown files
+[*.{md,rst}]
+trim_trailing_whitespace = false  # Preserve trailing spaces for line breaks
+
+# Shell scripts
+[*.{sh,bash,zsh,fish}]
+end_of_line = lf
+indent_size = 2
+
+# Windows batch files
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+indent_size = 4
+
+# Makefile
+[Makefile]
+indent_style = tab
+
+# Web files
+[*.{html,htm,css,scss,sass,less,js,jsx,ts,tsx,vue}]
+indent_size = 2
+
+# XML files
+[*.{xml,svg}]
+indent_size = 2
+
+# Config files
+[.{gitignore,gitattributes,gitmodules,editorconfig}]
+indent_size = 4
+
+# GitHub Actions
+[.github/**.{yml,yaml}]
+indent_size = 2
+
+# Jupyter notebooks
+[*.ipynb]
+indent_size = 2
+
+# 3D model text formats
+[*.{obj,mtl,ply,dae,gltf,usda}]
+end_of_line = lf
+trim_trailing_whitespace = true
+
+# Documentation
+[docs/**.md]
+max_line_length = 100
+
+# License files
+[{LICENSE,LICENSE.*,COPYING,COPYING.*}]
+insert_final_newline = false
