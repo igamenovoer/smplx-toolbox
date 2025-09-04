@@ -4,8 +4,8 @@
   "metadata": {
     "version": "2.0.0",
     "description": "project 级资源注册表",
-    "createdAt": "2025-09-04T12:08:16.472Z",
-    "updatedAt": "2025-09-04T12:08:16.479Z",
+    "createdAt": "2025-09-04T14:21:07.674Z",
+    "updatedAt": "2025-09-04T14:21:07.677Z",
     "resourceCount": 5
   },
   "resources": [
@@ -17,9 +17,9 @@
       "description": "专业角色，提供特定领域的专业能力",
       "reference": "@project://.promptx/resource/role/animation-dev/animation-dev.role.md",
       "metadata": {
-        "createdAt": "2025-09-04T12:08:16.475Z",
-        "updatedAt": "2025-09-04T12:08:16.475Z",
-        "scannedAt": "2025-09-04T12:08:16.475Z",
+        "createdAt": "2025-09-04T14:21:07.675Z",
+        "updatedAt": "2025-09-04T14:21:07.675Z",
+        "scannedAt": "2025-09-04T14:21:07.675Z",
         "path": "role/animation-dev/animation-dev.role.md"
       }
     },
@@ -31,9 +31,9 @@
       "description": "执行模式，定义具体的行为模式",
       "reference": "@project://.promptx/resource/role/animation-dev/execution/3d-human-workflow.execution.md",
       "metadata": {
-        "createdAt": "2025-09-04T12:08:16.477Z",
-        "updatedAt": "2025-09-04T12:08:16.477Z",
-        "scannedAt": "2025-09-04T12:08:16.477Z",
+        "createdAt": "2025-09-04T14:21:07.676Z",
+        "updatedAt": "2025-09-04T14:21:07.676Z",
+        "scannedAt": "2025-09-04T14:21:07.676Z",
         "path": "role/animation-dev/execution/3d-human-workflow.execution.md"
       }
     },
@@ -45,9 +45,9 @@
       "description": "执行模式，定义具体的行为模式",
       "reference": "@project://.promptx/resource/role/animation-dev/execution/blender-development.execution.md",
       "metadata": {
-        "createdAt": "2025-09-04T12:08:16.478Z",
-        "updatedAt": "2025-09-04T12:08:16.478Z",
-        "scannedAt": "2025-09-04T12:08:16.478Z",
+        "createdAt": "2025-09-04T14:21:07.676Z",
+        "updatedAt": "2025-09-04T14:21:07.676Z",
+        "scannedAt": "2025-09-04T14:21:07.676Z",
         "path": "role/animation-dev/execution/blender-development.execution.md"
       }
     },
@@ -59,9 +59,9 @@
       "description": "思维模式，指导AI的思考方式",
       "reference": "@project://.promptx/resource/role/animation-dev/thought/animation-3d-thinking.thought.md",
       "metadata": {
-        "createdAt": "2025-09-04T12:08:16.478Z",
-        "updatedAt": "2025-09-04T12:08:16.478Z",
-        "scannedAt": "2025-09-04T12:08:16.478Z",
+        "createdAt": "2025-09-04T14:21:07.677Z",
+        "updatedAt": "2025-09-04T14:21:07.677Z",
+        "scannedAt": "2025-09-04T14:21:07.677Z",
         "path": "role/animation-dev/thought/animation-3d-thinking.thought.md"
       }
     },
@@ -73,9 +73,9 @@
       "description": "思维模式，指导AI的思考方式",
       "reference": "@project://.promptx/resource/role/animation-dev/thought/smplx-modeling.thought.md",
       "metadata": {
-        "createdAt": "2025-09-04T12:08:16.479Z",
-        "updatedAt": "2025-09-04T12:08:16.479Z",
-        "scannedAt": "2025-09-04T12:08:16.479Z",
+        "createdAt": "2025-09-04T14:21:07.677Z",
+        "updatedAt": "2025-09-04T14:21:07.677Z",
+        "scannedAt": "2025-09-04T14:21:07.677Z",
         "path": "role/animation-dev/thought/smplx-modeling.thought.md"
       }
     }
