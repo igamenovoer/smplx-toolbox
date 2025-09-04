@@ -95,3 +95,6 @@ docs/_build/
 *.temp
 temp/
 temporary/
+
+# ruff cache
+.ruff_cache/
