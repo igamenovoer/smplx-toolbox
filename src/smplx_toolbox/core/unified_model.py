@@ -313,7 +313,8 @@ class UnifiedSmplModel:
             inputs = UnifiedSmplInputs.from_keypoint_pose(inputs, model_type=model_type)
 
         # Validate inputs
-        inputs.check_valid(model_type, num_betas=self.num_betas, 
+        # Validate inputs excluding strict beta-count (we adapt betas below)
+        inputs.check_valid(model_type, num_betas=None,
                          num_expressions=self.num_expressions)
 
         batch_size = inputs.batch_size() or 1
@@ -332,17 +333,40 @@ class UnifiedSmplModel:
         # Common parameters
         if model_type in ["smpl", "smplh", "smplx"]:
             normalized["global_orient"] = ensure_tensor(inputs.root_orient, (batch_size, 3))
-            normalized["body_pose"] = ensure_tensor(inputs.pose_body, (batch_size, 63))
 
+            # Body pose: adapter reports 63 DoF, but SMPL/SMPL-H LBS expects 69.
+            # Pad with zeros for the model call only to avoid LBS shape mismatch.
+            body_pose_63 = ensure_tensor(inputs.pose_body, (batch_size, 63))
+            if model_type == "smpl":
+                # SMPL requires 69 DoF body pose for LBS (23 joints * 3)
+                pad = torch.zeros((batch_size, 6), device=device, dtype=dtype)
+                normalized["body_pose"] = torch.cat([body_pose_63, pad], dim=-1)
+            else:
+                # SMPL-H/SMPL-X use 63 DoF body pose
+                normalized["body_pose"] = body_pose_63
+
+            # Betas: adapt to model's expected count by pad/truncate
             if inputs.betas is not None:
-                normalized["betas"] = inputs.betas.to(device=device, dtype=dtype)
+                b = inputs.betas.to(device=device, dtype=dtype)
+                nb = self.num_betas
+                if b.shape[1] < nb:
+                    pad_b = torch.zeros((b.shape[0], nb - b.shape[1]), device=device, dtype=dtype)
+                    b = torch.cat([b, pad_b], dim=1)
+                elif b.shape[1] > nb:
+                    b = b[:, :nb]
+                normalized["betas"] = b
             if inputs.trans is not None:
                 normalized["transl"] = inputs.trans.to(device=device, dtype=dtype)
 
-        # SMPL-H specific
+        # SMPL-H / SMPL-X specific (handle PCA vs axis-angle hand representation)
         if model_type in ["smplh", "smplx"]:
-            normalized["left_hand_pose"] = ensure_tensor(inputs.left_hand_pose, (batch_size, 45))
-            normalized["right_hand_pose"] = ensure_tensor(inputs.right_hand_pose, (batch_size, 45))
+            model = self.m_deformable_model  # type: ignore[assignment]
+            use_pca = bool(getattr(model, "use_pca", False))
+            num_pca = int(getattr(model, "num_pca_comps", 6)) if use_pca else 45
+            lh_shape = (batch_size, num_pca)
+            rh_shape = (batch_size, num_pca)
+            normalized["left_hand_pose"] = ensure_tensor(inputs.left_hand_pose, lh_shape)
+            normalized["right_hand_pose"] = ensure_tensor(inputs.right_hand_pose, rh_shape)
 
         # SMPL-X specific
         if model_type == "smplx":
@@ -497,7 +521,13 @@ class UnifiedSmplModel:
 
         # Body pose
         if "body_pose" in normalized_inputs:
-            pose_parts.append(normalized_inputs["body_pose"])
+            bp = normalized_inputs["body_pose"]
+            # Report 63-DoF body pose in the unified full_pose for SMPL/SMPL-H,
+            # even if we padded to 69 for the model call.
+            if self.model_type in ["smpl", "smplh"] and bp.shape[-1] >= 63:
+                pose_parts.append(bp[:, :63])
+            else:
+                pose_parts.append(bp)
 
         # Model-specific parts
         if model_type == "smplx":
@@ -511,10 +541,37 @@ class UnifiedSmplModel:
 
         # Hands (SMPL-H and SMPL-X)
         if model_type in ["smplh", "smplx"]:
-            if "left_hand_pose" in normalized_inputs:
-                pose_parts.append(normalized_inputs["left_hand_pose"])
-            if "right_hand_pose" in normalized_inputs:
-                pose_parts.append(normalized_inputs["right_hand_pose"])
+            # If the underlying model uses PCA for hands (e.g., 6 comps), expand to 45 AA for reporting
+            model = self.m_deformable_model  # type: ignore[assignment]
+            use_pca = bool(getattr(model, "use_pca", False))
+            if use_pca:
+                # Try to expand PCA -> axis-angle using model's components buffers
+                lh = normalized_inputs.get("left_hand_pose")
+                rh = normalized_inputs.get("right_hand_pose")
+                lh_comp = getattr(model, "left_hand_components", None)
+                rh_comp = getattr(model, "right_hand_components", None)
+                device, dtype = self.device, self.dtype
+
+                def expand_pca(p: Tensor | None, comp: Tensor | None) -> Tensor:
+                    if p is None:
+                        return torch.zeros((1, 45), device=device, dtype=dtype)
+                    if comp is None:
+                        # Fallback to zeros with AA size if components unavailable
+                        return torch.zeros((p.shape[0], 45), device=p.device, dtype=p.dtype)
+                    # Ensure comp is on same device/dtype
+                    comp_t = comp.to(device=p.device, dtype=p.dtype)
+                    # bi,ij->bj : (B, K) @ (K, 45) => (B, 45)
+                    return torch.einsum("bi,ij->bj", p, comp_t)
+
+                if lh is not None:
+                    pose_parts.append(expand_pca(lh, lh_comp))
+                if rh is not None:
+                    pose_parts.append(expand_pca(rh, rh_comp))
+            else:
+                if "left_hand_pose" in normalized_inputs:
+                    pose_parts.append(normalized_inputs["left_hand_pose"])
+                if "right_hand_pose" in normalized_inputs:
+                    pose_parts.append(normalized_inputs["right_hand_pose"])
 
         if pose_parts:
             return torch.cat(pose_parts, dim=-1)

@@ -70,7 +70,15 @@ def smpl_model() -> Any:
 def smplh_model() -> Any:
     if not _has_model_dir("smplh"):
         pytest.skip("SMPL-H model directory missing under data/body_models/smplh")
-    return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh")
+    smplh_dir = _MODEL_ROOT / "smplh"
+    neutral_pkl = smplh_dir / "SMPLH_NEUTRAL.pkl"
+    male_pkl = smplh_dir / "SMPLH_MALE.pkl"
+    if neutral_pkl.exists():
+        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="neutral")
+    elif male_pkl.exists():
+        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="male")
+    else:
+        pytest.skip("SMPL-H model file not available (no NEUTRAL or MALE found)")
 
 
 @pytest.fixture(scope="session")
@@ -244,7 +252,15 @@ def test_forward_shapes_and_unification_real(
     elif model_type == "smplh":
         if not _has_model_dir("smplh"):
             pytest.skip("SMPL-H model directory missing")
-        model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh")
+        smplh_dir = _MODEL_ROOT / "smplh"
+        neutral_pkl = smplh_dir / "SMPLH_NEUTRAL.pkl"
+        male_pkl = smplh_dir / "SMPLH_MALE.pkl"
+        if neutral_pkl.exists():
+            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="neutral")
+        elif male_pkl.exists():
+            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="male")
+        else:
+            pytest.skip("SMPL-H model file not available (no NEUTRAL or MALE found)")
     else:
         if not _has_model_dir("smpl"):
             pytest.skip("SMPL model directory missing")
