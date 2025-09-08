@@ -25,7 +25,6 @@ if _SMPXLIB_ROOT.exists():
 
 try:
     from smplx import create as smplx_create
-    from smplx import SMPLH as _SMPLHClass
 except ImportError as e:
     print(f"Failed to import smplx: {e}")
     sys.exit(1)
@@ -59,7 +58,6 @@ def process_model(model_type: str, gender: str, model_name: str) -> None:
 
     # 1. Load the base model
     try:
-        # Prefer NPZ for SMPL-H with 16 betas if available
         create_kwargs = dict(
             model_path=str(MODEL_ROOT),
             model_type=model_type,
@@ -67,35 +65,8 @@ def process_model(model_type: str, gender: str, model_name: str) -> None:
             use_pca=False,
             batch_size=1,
         )
-        if model_type == "smplh":
-            smplh_dir = MODEL_ROOT / "smplh"
-            flat_npz = smplh_dir / f"SMPLH_{gender.upper()}.npz"
-            nested_npz = smplh_dir / gender / "model.npz"
-            def _has_hand_keys(path: Path) -> bool:
-                try:
-                    import numpy as np
-                    data = np.load(str(path), allow_pickle=True)
-                    keys = set(data.files)
-                    return {
-                        "hands_componentsl",
-                        "hands_componentsr",
-                        "hands_meanl",
-                        "hands_meanr",
-                    }.issubset(keys)
-                except Exception:
-                    return False
-            if flat_npz.exists() and _has_hand_keys(flat_npz):
-                create_kwargs.update({"ext": "npz", "num_betas": 16})
-                base_model = smplx_create(**create_kwargs)
-            elif nested_npz.exists() and _has_hand_keys(nested_npz):
-                base_model = _SMPLHClass(
-                    model_path=str(nested_npz), gender=gender, ext="npz", num_betas=16, use_pca=False, batch_size=1
-                )
-            else:
-                print(f"SMPL-H NPZ for {gender} missing hand keys; skipping SMPL-H exports.")
-                return
-        else:
-            base_model = smplx_create(**create_kwargs)
+        # For SMPL-H use default PKL models
+        base_model = smplx_create(**create_kwargs)
         model = UnifiedSmplModel.from_smpl_model(base_model)
     except Exception as e:
         print(f"Could not load {model_name}: {e}")
