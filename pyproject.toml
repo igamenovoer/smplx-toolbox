@@ -172,6 +172,7 @@ click = "*"
 smplx = "*"
 # Install the local package in editable mode
 smplx-toolbox = { path = ".", editable = true }
+pip = "*"  # For installing legacy packages
 
 # Platform-specific PyTorch installation for all environments
 [tool.pixi.target.win-64.pypi-dependencies]
@@ -199,7 +200,6 @@ ruff = "*"
 mypy = "*"
 pre-commit = "*"
 mkdocs-material = "*"
-pip = "*"  # For installing legacy packages
 
 [tool.pixi.environments]
 default = {solve-group = "default"}
