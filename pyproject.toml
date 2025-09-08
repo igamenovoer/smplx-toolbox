@@ -199,6 +199,7 @@ ruff = "*"
 mypy = "*"
 pre-commit = "*"
 mkdocs-material = "*"
+pip = "*"  # For installing legacy packages
 
 [tool.pixi.environments]
 default = {solve-group = "default"}
@@ -217,6 +218,10 @@ format-check = "ruff format --check src tests scripts"
 type-check = "mypy src"
 pre-commit-install = "pre-commit install"
 pre-commit-run = "pre-commit run --all-files"
+
+# Setup legacy packages that don't work with modern build systems
+# Use --no-build-isolation to avoid issues with chumpy's legacy setup.py
+setup-legacy-dev = "pip install --no-build-isolation git+https://github.com/mattloper/chumpy.git"
 
 # Build tasks
 build = "python -m build"

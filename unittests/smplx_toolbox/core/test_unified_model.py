@@ -280,12 +280,17 @@ def test_forward_shapes_and_unification_real(
     assert "joints_raw" in out.extras
     if uni.model_type == "smplh":
         assert "missing_joints" in out.extras
-        assert out.extras["missing_joints"] == [52, 53, 54]
+        # SMPL-H is missing face joints (jaw=22, left_eye=23, right_eye=24)
+        assert out.extras["missing_joints"] == [22, 23, 24]
     if uni.model_type == "smpl":
         assert "missing_joints" in out.extras
-        # SMPL path copies first min(raw, 23) body joints, rest missing
-        # Official SMPL raw joints typically >= 23; we assert the contract start index
-        assert out.extras["missing_joints"][0] >= 23
+        # SMPL is missing face and hand joints (indices 22-54 in unified set)
+        # It should have at least these missing
+        missing = out.extras["missing_joints"]
+        assert 22 in missing  # jaw
+        assert 23 in missing  # left_eye_smplhf
+        assert 24 in missing  # right_eye_smplhf
+        # Hand joints should also be missing (25-54)
 
 
 # ------------------------------------------------------------------------
@@ -301,7 +306,10 @@ def test_get_joint_names_and_selection() -> None:
     )
     names = uni.get_joint_names(unified=True)
     assert len(names) == 55
-    assert names[0] == "joint_0" and names[-1] == "joint_54"
+    # Verify we get actual joint names, not placeholders
+    assert names[0] == "pelvis"
+    assert names[22] == "jaw"
+    assert names[54] == "right_thumb3"
 
     # select by indices and by names should agree
     B = 1
