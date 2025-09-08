@@ -35,6 +35,8 @@ if _SMPXLIB_ROOT.exists():
 try:
     # Official API entrypoint from local copy
     from smplx import create as smplx_create  # type: ignore
+    # Also import class to support file-based NPZ in nested folders
+    from smplx import SMPLH as _SMPLHClass  # type: ignore
 except Exception as _imp_err:  # pragma: no cover
     pytest.skip(f"Local smplx source not importable: {_imp_err}", allow_module_level=True)
 
@@ -55,6 +57,24 @@ def _has_model_dir(model_type: str) -> bool:
     return (_MODEL_ROOT / model_type).exists()
 
 
+def _smplh_npz_has_hand_keys(path: Path) -> bool:
+    """Check whether an SMPL-H npz contains hand keys expected by smplx.
+
+    Required keys include hands_componentsl/r and hands_meanl/r.
+    """
+    try:
+        data = np.load(str(path), allow_pickle=True)
+        keys = set(data.files)
+        return {
+            "hands_componentsl",
+            "hands_componentsr",
+            "hands_meanl",
+            "hands_meanr",
+        }.issubset(keys)
+    except Exception:
+        return False
+
+
 # ------------------------------------------------------------------------
 # Fixtures: Real model loaders
 # ------------------------------------------------------------------------
@@ -71,14 +91,38 @@ def smplh_model() -> Any:
     if not _has_model_dir("smplh"):
         pytest.skip("SMPL-H model directory missing under data/body_models/smplh")
     smplh_dir = _MODEL_ROOT / "smplh"
-    neutral_pkl = smplh_dir / "SMPLH_NEUTRAL.pkl"
-    male_pkl = smplh_dir / "SMPLH_MALE.pkl"
-    if neutral_pkl.exists():
-        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="neutral")
-    elif male_pkl.exists():
-        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="male")
-    else:
-        pytest.skip("SMPL-H model file not available (no NEUTRAL or MALE found)")
+    # Prefer 16-beta NPZ models if present; support nested gender folders
+    for gender in ("neutral", "male", "female"):
+        npz = smplh_dir / f"SMPLH_{gender.upper()}.npz"
+        if npz.exists() and _smplh_npz_has_hand_keys(npz):
+            return smplx_create(
+                model_path=str(_MODEL_ROOT),
+                model_type="smplh",
+                gender=gender,
+                ext="npz",
+                num_betas=16,
+            )
+        # Nested folder case: data/body_models/smplh/{gender}/model.npz
+        nested_npz = smplh_dir / gender / "model.npz"
+        if nested_npz.exists() and _smplh_npz_has_hand_keys(nested_npz):
+            # Direct class construction supports file path + ext
+            return _SMPLHClass(
+                model_path=str(nested_npz),
+                gender=gender,
+                ext="npz",
+                num_betas=16,
+                use_pca=False,
+            )
+    # Fallback to PKL if NPZ not available
+    for gender in ("neutral", "male", "female"):
+        pkl = smplh_dir / f"SMPLH_{gender.upper()}.pkl"
+        if pkl.exists():
+            return smplx_create(
+                model_path=str(_MODEL_ROOT),
+                model_type="smplh",
+                gender=gender,
+            )
+    pytest.skip("SMPL-H model file not available (no NPZ or PKL found)")
 
 
 @pytest.fixture(scope="session")
@@ -253,14 +297,37 @@ def test_forward_shapes_and_unification_real(
         if not _has_model_dir("smplh"):
             pytest.skip("SMPL-H model directory missing")
         smplh_dir = _MODEL_ROOT / "smplh"
-        neutral_pkl = smplh_dir / "SMPLH_NEUTRAL.pkl"
-        male_pkl = smplh_dir / "SMPLH_MALE.pkl"
-        if neutral_pkl.exists():
-            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="neutral")
-        elif male_pkl.exists():
-            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender="male")
+        # Prefer NPZ variants (flat or nested), then fallback to PKL
+        chosen = None
+        for gender in ("neutral", "male", "female"):
+            flat_npz = smplh_dir / f"SMPLH_{gender.upper()}.npz"
+            if flat_npz.exists() and _smplh_npz_has_hand_keys(flat_npz):
+                chosen = (gender, "npz")
+                break
+            nested_npz = smplh_dir / gender / "model.npz"
+            if nested_npz.exists() and _smplh_npz_has_hand_keys(nested_npz):
+                # Mark as nested npz
+                chosen = (gender, "npz_nested")
+                break
+        if chosen is None:
+            for gender in ("neutral", "male", "female"):
+                if (smplh_dir / f"SMPLH_{gender.upper()}.pkl").exists():
+                    chosen = (gender, "pkl")
+                    break
+        if chosen is None:
+            pytest.skip("SMPL-H model file not available (no NPZ or PKL found)")
+        gender, ext = chosen
+        if ext == "npz":
+            model = smplx_create(
+                model_path=str(_MODEL_ROOT), model_type="smplh", gender=gender, ext="npz", num_betas=16
+            )
+        elif ext == "npz_nested":
+            nested_npz = smplh_dir / gender / "model.npz"
+            model = _SMPLHClass(
+                model_path=str(nested_npz), gender=gender, ext="npz", num_betas=16, use_pca=False
+            )
         else:
-            pytest.skip("SMPL-H model file not available (no NEUTRAL or MALE found)")
+            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smplh", gender=gender)
     else:
         if not _has_model_dir("smpl"):
             pytest.skip("SMPL model directory missing")
