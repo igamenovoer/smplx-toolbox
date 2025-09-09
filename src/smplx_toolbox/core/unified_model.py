@@ -312,78 +312,132 @@ class UnifiedSmplModel:
             inputs.check_valid_by_keypoints(model_type, strict=False, warn_fn=self.m_warn_fn)
             inputs = UnifiedSmplInputs.from_keypoint_pose(inputs, model_type=model_type)
 
-        # Validate inputs
-        # Validate inputs excluding strict beta-count (we adapt betas below)
-        inputs.check_valid(model_type, num_betas=None,
-                         num_expressions=self.num_expressions)
+        # Validate inputs (beta/expr count adapted later)
+        inputs.check_valid(model_type, num_betas=None, num_expressions=self.num_expressions)
+
+        # Route through input conversion helpers (AA-space)
+        if model_type == "smpl":
+            input_dict: dict[str, Tensor | bool] = inputs.to_smpl_inputs()
+        elif model_type == "smplh":
+            input_dict = inputs.to_smplh_inputs(with_hand_shape=False)
+        else:
+            input_dict = inputs.to_smplx_inputs()
 
         batch_size = inputs.batch_size() or 1
         device = self.device
         dtype = self.dtype
 
-        # Prepare normalized inputs
-        normalized = {}
-
         # Helper to ensure tensor or create zeros
-        def ensure_tensor(value: Tensor | None, shape: tuple[int, ...]) -> Tensor:
+        def ensure(value: Tensor | None, shape: tuple[int, ...]) -> Tensor:
             if value is not None:
                 return value.to(device=device, dtype=dtype)
             return torch.zeros(shape, device=device, dtype=dtype)
 
-        # Common parameters
-        if model_type in ["smpl", "smplh", "smplx"]:
-            normalized["global_orient"] = ensure_tensor(inputs.root_orient, (batch_size, 3))
+        normalized: dict[str, Tensor | bool] = {}
 
-            # Body pose: adapter reports 63 DoF, but SMPL/SMPL-H LBS expects 69.
-            # Pad with zeros for the model call only to avoid LBS shape mismatch.
-            body_pose_63 = ensure_tensor(inputs.pose_body, (batch_size, 63))
-            if model_type == "smpl":
-                # SMPL requires 69 DoF body pose for LBS (23 joints * 3)
-                pad = torch.zeros((batch_size, 6), device=device, dtype=dtype)
-                normalized["body_pose"] = torch.cat([body_pose_63, pad], dim=-1)
-            else:
-                # SMPL-H/SMPL-X use 63 DoF body pose
-                normalized["body_pose"] = body_pose_63
+        # Global orient
+        normalized["global_orient"] = ensure(input_dict.get("global_orient", None), (batch_size, 3))
 
-            # Betas: adapt to model's expected count by pad/truncate
-            if inputs.betas is not None:
-                b = inputs.betas.to(device=device, dtype=dtype)
-                nb = self.num_betas
-                if b.shape[1] < nb:
-                    pad_b = torch.zeros((b.shape[0], nb - b.shape[1]), device=device, dtype=dtype)
-                    b = torch.cat([b, pad_b], dim=1)
-                elif b.shape[1] > nb:
-                    b = b[:, :nb]
-                normalized["betas"] = b
-            if inputs.trans is not None:
-                normalized["transl"] = inputs.trans.to(device=device, dtype=dtype)
+        # Body pose: pad to 69 for SMPL
+        body_pose_63 = ensure(input_dict.get("body_pose", None), (batch_size, 63))
+        if model_type == "smpl":
+            pad = torch.zeros((batch_size, 6), device=device, dtype=dtype)
+            normalized["body_pose"] = torch.cat([body_pose_63, pad], dim=-1)
+        else:
+            normalized["body_pose"] = body_pose_63
 
-        # SMPL-H / SMPL-X specific (handle PCA vs axis-angle hand representation)
+        # Betas: adapt to model's expected count by pad/truncate
+        if inputs.betas is not None:
+            b = inputs.betas.to(device=device, dtype=dtype)
+            nb = self.num_betas
+            if b.shape[1] < nb:
+                pad_b = torch.zeros((b.shape[0], nb - b.shape[1]), device=device, dtype=dtype)
+                b = torch.cat([b, pad_b], dim=1)
+            elif b.shape[1] > nb:
+                if self.m_warn_fn:
+                    self.m_warn_fn(
+                        f"Truncating betas from {b.shape[1]} to {nb} to match model"
+                    )
+                b = b[:, :nb]
+            normalized["betas"] = b
+
+        # Translation
+        if inputs.trans is not None:
+            normalized["transl"] = inputs.trans.to(device=device, dtype=dtype)
+
+        # Hands (handle PCA models)
         if model_type in ["smplh", "smplx"]:
             model = self.m_deformable_model  # type: ignore[assignment]
             use_pca = bool(getattr(model, "use_pca", False))
-            num_pca = int(getattr(model, "num_pca_comps", 6)) if use_pca else 45
-            lh_shape = (batch_size, num_pca)
-            rh_shape = (batch_size, num_pca)
-            normalized["left_hand_pose"] = ensure_tensor(inputs.left_hand_pose, lh_shape)
-            normalized["right_hand_pose"] = ensure_tensor(inputs.right_hand_pose, rh_shape)
+            if use_pca:
+                # Convert AA(45) -> PCA(K) using lstsq against components; subtract means
+                lh_aa = input_dict.get("left_hand_pose", None)
+                rh_aa = input_dict.get("right_hand_pose", None)
+                lh_comp = getattr(model, "left_hand_components", None)
+                rh_comp = getattr(model, "right_hand_components", None)
+                lh_mean = getattr(model, "left_hand_mean", None)
+                rh_mean = getattr(model, "right_hand_mean", None)
 
-        # SMPL-X specific
+                def aa_to_pca(aa: Tensor | None, comp: Tensor | None, mean: Tensor | None) -> Tensor:
+                    K = int(getattr(model, "num_pca_comps", 6))
+                    if aa is None:
+                        return torch.zeros((batch_size, K), device=device, dtype=dtype)
+                    if comp is None:
+                        if self.m_warn_fn:
+                            self.m_warn_fn("Missing hand PCA components; using zeros for coefficients")
+                        return torch.zeros((aa.shape[0], K), device=device, dtype=dtype)
+                    # Shapes: comp: (K,45), aa: (B,45), mean: (45,)
+                    aa_tgt = aa.to(device=device, dtype=dtype)
+                    if mean is not None:
+                        mean_t = mean.to(device=device, dtype=dtype)
+                        if mean_t.ndim == 1:
+                            mean_t = mean_t.view(1, -1)
+                        aa_tgt = aa_tgt - mean_t
+                    # Solve comp^T @ X^T ≈ aa_tgt^T  => (45,K) @ (K,B) = (45,B)
+                    A = comp.t().to(device=device, dtype=dtype)  # (45,K)
+                    Y = aa_tgt.t()  # (45,B)
+                    try:
+                        sol = torch.linalg.lstsq(A, Y).solution  # (K,B)
+                    except Exception:
+                        pinv = torch.linalg.pinv(A)
+                        sol = pinv @ Y
+                    return sol.t().contiguous()  # (B,K)
+
+                normalized["left_hand_pose"] = aa_to_pca(lh_aa, lh_comp, lh_mean)
+                normalized["right_hand_pose"] = aa_to_pca(rh_aa, rh_comp, rh_mean)
+            else:
+                # Pass AA(45) directly
+                normalized["left_hand_pose"] = ensure(input_dict.get("left_hand_pose", None), (batch_size, 45))
+                normalized["right_hand_pose"] = ensure(input_dict.get("right_hand_pose", None), (batch_size, 45))
+
+        # SMPL-X specifics (jaw/eyes/expressions)
         if model_type == "smplx":
-            # Always provide jaw and eye poses for SMPL-X (zeros if not specified)
-            normalized["jaw_pose"] = ensure_tensor(inputs.pose_jaw, (batch_size, 3))
-            normalized["leye_pose"] = ensure_tensor(inputs.left_eye_pose, (batch_size, 3))
-            normalized["reye_pose"] = ensure_tensor(inputs.right_eye_pose, (batch_size, 3))
+            normalized["jaw_pose"] = ensure(input_dict.get("jaw_pose", None), (batch_size, 3))
+            normalized["leye_pose"] = ensure(input_dict.get("leye_pose", None), (batch_size, 3))
+            normalized["reye_pose"] = ensure(input_dict.get("reye_pose", None), (batch_size, 3))
 
-            # Always provide expression for SMPL-X (zeros if not specified)
             num_expr = self.num_expressions
             if num_expr > 0:
-                normalized["expression"] = ensure_tensor(inputs.expression, (batch_size, num_expr))
+                expr_in = input_dict.get("expression", None)
+                if expr_in is None:
+                    normalized["expression"] = torch.zeros((batch_size, num_expr), device=device, dtype=dtype)
+                else:
+                    e = expr_in.to(device=device, dtype=dtype)
+                    if e.shape[1] < num_expr:
+                        pad_e = torch.zeros((e.shape[0], num_expr - e.shape[1]), device=device, dtype=dtype)
+                        e = torch.cat([e, pad_e], dim=1)
+                    elif e.shape[1] > num_expr:
+                        if self.m_warn_fn:
+                            self.m_warn_fn(
+                                f"Truncating expression from {e.shape[1]} to {num_expr} to match model"
+                            )
+                        e = e[:, :num_expr]
+                    normalized["expression"] = e
 
-        # Always request vertices (joints are returned by default)
+        # Always request vertices
         normalized["return_verts"] = True
 
-        return normalized
+        return normalized  # type: ignore[return-value]
 
     def _unify_joints(self, joints_raw: Tensor, model_type: str) -> tuple[Tensor, dict[str, Any]]:
         """Convert raw model joints to the unified 55-joint SMPL-X set.

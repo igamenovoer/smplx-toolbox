@@ -79,6 +79,9 @@ class UnifiedSmplInputs:
     # Shape and expression
     betas: Tensor | None = None        # (B, n_betas) - shape parameters
     expression: Tensor | None = None   # (B, n_expr) - facial expression (SMPL-X only)
+    hand_betas: Tensor | None = None   # (B, H) - optional MANO hand shape (SMPL-H MANO variant)
+    use_hand_pca: bool | None = None   # Hint: whether hands are PCA in the base model
+    num_hand_pca_comps: int | None = None  # Hint: number of PCA comps if PCA is used
 
     # Translation
     trans: Tensor | None = None        # (B, 3) - global translation
@@ -195,6 +198,9 @@ class UnifiedSmplInputs:
                 raise ValueError("SMPL does not support eye poses")
             if self.expression is not None:
                 raise ValueError("SMPL does not support facial expressions")
+            if self.hand_betas is not None:
+                # SMPL has no separate hand shape space
+                raise ValueError("SMPL does not support hand_betas")
 
         elif model_type == "smplh":
             # SMPL-H: requires both hands if any provided, no face
@@ -215,6 +221,7 @@ class UnifiedSmplInputs:
                 raise ValueError("SMPL-H does not support eye poses")
             if self.expression is not None:
                 raise ValueError("SMPL-H does not support facial expressions")
+            # hand_betas can be present for MANO-variant models; allow silently
 
         elif model_type == "smplx":
             # SMPL-X: if hands provided, both required; same for eyes
@@ -248,6 +255,7 @@ class UnifiedSmplInputs:
                         f"expression shape mismatch: got {self.expression.shape[1]} parameters, "
                         f"model expects {num_expressions}"
                     )
+            # hand_betas ignored in SMPL-X models
 
     @classmethod
     def from_keypoint_pose(cls, kpts: PoseByKeypoints, *, model_type: ModelType) -> UnifiedSmplInputs:
@@ -360,6 +368,75 @@ class UnifiedSmplInputs:
             left_eye_pose=left_eye_pose,
             right_eye_pose=right_eye_pose
         )
+
+    # ------------------------------------------------------------------
+    # Conversion methods (produce per-family input dicts in AA space)
+    # The wrapper will finalize device/dtype, padding, PCA conversion, and
+    # pad/truncate betas/expressions.
+    # ------------------------------------------------------------------
+    def to_smpl_inputs(self) -> dict[str, Tensor | bool]:
+        """Convert to SMPL-friendly inputs (axis-angle, no hands/face).
+
+        Returns
+        -------
+        dict[str, Tensor | bool]
+            Dictionary with keys suitable for smplx.SMPL forward. Body pose is
+            left as 63-DoF (21x3). The wrapper pads to 69 as needed.
+        """
+        out: dict[str, Tensor | bool] = {
+            "global_orient": self.root_orient if self.root_orient is not None else torch.zeros((self.batch_size() or 1, 3)),
+            "body_pose": self.pose_body if self.pose_body is not None else torch.zeros((self.batch_size() or 1, 63)),
+            "return_verts": True,
+        }
+        if self.betas is not None:
+            out["betas"] = self.betas
+        if self.trans is not None:
+            out["transl"] = self.trans
+        return out
+
+    def to_smplh_inputs(self, with_hand_shape: bool) -> dict[str, Tensor | bool]:
+        """Convert to SMPL-H-friendly inputs (axis-angle hands).
+
+        Parameters
+        ----------
+        with_hand_shape : bool
+            If True and `hand_betas` is present and supported, include it.
+
+        Returns
+        -------
+        dict[str, Tensor | bool]
+            Dictionary with body pose (63-DoF) and hand AA(45) if present.
+        """
+        out: dict[str, Tensor | bool] = self.to_smpl_inputs()
+        # Add hands if available
+        if self.left_hand_pose is not None:
+            out["left_hand_pose"] = self.left_hand_pose
+        if self.right_hand_pose is not None:
+            out["right_hand_pose"] = self.right_hand_pose
+        # Optional MANO hand shape (wrapper will filter if unsupported)
+        if with_hand_shape and self.hand_betas is not None:
+            out["hand_betas"] = self.hand_betas  # type: ignore[assignment]
+        return out
+
+    def to_smplx_inputs(self) -> dict[str, Tensor | bool]:
+        """Convert to SMPL-X-friendly inputs (axis-angle hands + face).
+
+        Returns
+        -------
+        dict[str, Tensor | bool]
+            Dictionary with body, hands, jaw, eyes, betas/expressions when present.
+        """
+        out: dict[str, Tensor | bool] = self.to_smplh_inputs(with_hand_shape=False)
+        # Face/eyes
+        if self.pose_jaw is not None:
+            out["jaw_pose"] = self.pose_jaw
+        if self.left_eye_pose is not None:
+            out["leye_pose"] = self.left_eye_pose
+        if self.right_eye_pose is not None:
+            out["reye_pose"] = self.right_eye_pose
+        if self.expression is not None:
+            out["expression"] = self.expression
+        return out
 
 
 @define(kw_only=True)

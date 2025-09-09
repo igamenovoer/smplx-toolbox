@@ -1,127 +1,26 @@
 # Installation
 
-## Requirements
+The project uses Pixi to manage environments and dev tools.
 
-- Python 3.8 or higher
-- Operating System: Windows, macOS, or Linux
+## Quick setup
 
-## Installation Methods
+- Full dev toolchain (PyTorch pinned per platform, docs, tests):
+  - `pixi install -e dev`
+- Auto-detect NVIDIA GPU and install a suitable env:
+  - `python scripts/auto-install.py`
 
-### PyPI Installation (Recommended)
+Notes
+- PyTorch is not declared in `pyproject.toml` runtime deps; Pixi installs it per platform.
+- Model assets are not bundled. Place SMPL/SMPL-X assets under `data/body_models`.
 
-```bash
-pip install smplx-toolbox
-```
+## Validate setup
 
-### Development Installation
+- Run tests: `pixi run -e dev pytest -q -m "not slow"`
+- Lint/format: `pixi run -e dev ruff check .` and `pixi run -e dev ruff format .`
+- Type check: `pixi run -e dev mypy src`
 
-For development or to get the latest features:
+## Docs commands (Material for MkDocs)
 
-```bash
-git clone https://github.com/yourusername/smplx-toolbox.git
-cd smplx-toolbox
-```
+- Serve locally: `pixi run -e dev mkdocs serve` (or `pixi run -e dev docs-serve`)
+- Build static site: `pixi run -e dev mkdocs build` (or `pixi run -e dev docs-build`)
 
-#### Using Pixi (Recommended for Development)
-
-```bash
-# Install Pixi if you haven't already
-curl -fsSL https://pixi.sh/install.sh | bash
-
-# Install project dependencies
-pixi install
-
-# Install in development mode
-pixi run install-dev
-```
-
-#### Using pip directly
-
-```bash
-pip install -e .[dev]
-```
-
-## Optional Dependencies
-
-### Visualization Features
-
-```bash
-pip install smplx-toolbox[viz]
-```
-
-### Documentation Building
-
-```bash
-pip install smplx-toolbox[docs]
-```
-
-### All Features
-
-```bash
-pip install smplx-toolbox[all]
-```
-
-## Verify Installation
-
-```python
-import smplx_toolbox as sxt
-print(sxt.__version__)
-```
-
-Or from command line:
-
-```bash
-smplx-toolbox --version
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**Import Error**: Make sure you're using Python 3.8 or higher:
-```bash
-python --version
-```
-
-**Missing Dependencies**: Reinstall with all dependencies:
-```bash
-pip install --upgrade --force-reinstall smplx-toolbox[all]
-```
-
-**CUDA Issues**: For GPU acceleration, ensure PyTorch is properly installed:
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-```
-
-### Environment Issues
-
-If you encounter environment conflicts, consider using a virtual environment:
-
-```bash
-python -m venv smplx-env
-source smplx-env/bin/activate  # On Windows: smplx-env\Scripts\activate
-pip install smplx-toolbox
-```
-
-## Development Setup
-
-For contributors and developers:
-
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/smplx-toolbox.git
-cd smplx-toolbox
-
-# Install Pixi
-curl -fsSL https://pixi.sh/install.sh | bash
-
-# Install development environment
-pixi install
-pixi run install-dev
-
-# Run tests to verify setup
-pixi run test
-
-# Install pre-commit hooks
-pixi run pre-commit-install
-```

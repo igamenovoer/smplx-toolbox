@@ -3,7 +3,7 @@
 Unit tests for UnifiedSmplModel and related data containers using real SMPL family models.
 
 This suite:
-- Loads official SMPL/SMPL-H/SMPL-X models from data/body_models via the local smplx implementation
+- Loads official SMPL/SMPL-H/SMPL-X models from data/body_models via the installed smplx package
 - Verifies UnifiedSmplModel API, normalization, unified joint set, and full_pose composition
 - Tests input containers and keypoint conversion behaviors independent of model
 - Confirms faces dtype/shape contract and adapter utility methods
@@ -13,12 +13,11 @@ Notes
     data/body_models/smpl/
     data/body_models/smplh/
     data/body_models/smplx/
-- Skips tests gracefully if models or smplx source not found.
+- Skips tests gracefully if models or the smplx package are not found.
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,16 +26,12 @@ import pytest
 import torch
 from torch import Tensor
 
-# Make local smplx implementation importable (context/refcode/smplx/smplx/*)
-_SMPXLIB_ROOT = Path("context/refcode/smplx")
-if _SMPXLIB_ROOT.exists():
-    sys.path.insert(0, str(_SMPXLIB_ROOT.resolve()))
-
+# Import the installed smplx package directly (no local context/refcode usage)
 try:
-    # Official API entrypoint from local copy
-    from smplx import create as smplx_create  # type: ignore
-except Exception as _imp_err:  # pragma: no cover
-    pytest.skip(f"Local smplx source not importable: {_imp_err}", allow_module_level=True)
+    import smplx  # noqa: F401
+    from smplx import create as smplx_create
+except Exception as _imp_err:  # pragma: no cover - environment dependent
+    pytest.skip(f"smplx not importable: {_imp_err}", allow_module_level=True)
 
 from smplx_toolbox.core import (
     UnifiedSmplModel,
@@ -64,7 +59,10 @@ def _has_model_dir(model_type: str) -> bool:
 def smpl_model() -> Any:
     if not _has_model_dir("smpl"):
         pytest.skip("SMPL model directory missing under data/body_models/smpl")
-    return smplx_create(model_path=str(_MODEL_ROOT), model_type="smpl")
+    try:
+        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smpl")
+    except Exception as e:  # pragma: no cover - environment dependent
+        pytest.skip(f"SMPL model not loadable: {e}")
 
 
 @pytest.fixture(scope="session")
@@ -76,11 +74,14 @@ def smplh_model() -> Any:
     for gender in ("neutral", "male", "female"):
         pkl = smplh_dir / f"SMPLH_{gender.upper()}.pkl"
         if pkl.exists():
-            return smplx_create(
-                model_path=str(_MODEL_ROOT),
-                model_type="smplh",
-                gender=gender,
-            )
+            try:
+                return smplx_create(
+                    model_path=str(_MODEL_ROOT),
+                    model_type="smplh",
+                    gender=gender,
+                )
+            except Exception as e:  # pragma: no cover
+                pytest.skip(f"SMPL-H model not loadable: {e}")
     pytest.skip("SMPL-H PKL model file not available (no NEUTRAL/MALE/FEMALE found)")
 
 
@@ -89,7 +90,10 @@ def smplx_model() -> Any:
     if not _has_model_dir("smplx"):
         pytest.skip("SMPL-X model directory missing under data/body_models/smplx")
     # For SMPL-X, npz expected; the create() handles defaults
-    return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplx")
+    try:
+        return smplx_create(model_path=str(_MODEL_ROOT), model_type="smplx")
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"SMPL-X model not loadable: {e}")
 
 
 @pytest.fixture

@@ -1,16 +1,24 @@
 #!/usr/bin/env python
 """
-This script demonstrates how to use the UnifiedSmplModel to load different
-SMPL family models, manipulate their parameters (pose and shape), and export
-the resulting meshes to .obj files.
+Unified SMPL model export examples.
 
-The script performs the following actions:
-1.  Loads a neutral SMPL-X model and exports its default mesh.
-2.  Loads a male SMPL-H model and exports its default mesh.
-3.  Randomizes the body pose of each model and exports the posed meshes.
-4.  Randomizes the shape parameters (betas) of each model and exports the shaped meshes.
+This script demonstrates the revised `UnifiedSmplModel` and `UnifiedSmplInputs`
+APIs by loading different SMPL-family models via `smplx.create`, applying a
+few simple parameterizations (pose, hands, face, expressions), and exporting the
+resulting meshes to OBJ files under `tmp/smpl-export/`.
 
-All output files are saved to the `tmp/smpl-export/` directory.
+What it does
+------------
+- Loads SMPL (neutral), SMPL-H (male), SMPL-X (neutral) using the official `smplx` API
+- Exports default meshes
+- Exports lightly posed meshes (body / hands / face depending on model)
+- Exports lightly shaped meshes by sampling betas (and expressions for SMPL-X)
+
+Notes
+-----
+- For simplicity we construct SMPL-H/SMPL-X with `use_pca=False` so hand poses
+  are provided in axis-angle (45 dims). The unified adapter can bridge AA<->PCA
+  if needed, but AA inputs are recommended for clarity.
 """
 
 import sys
@@ -29,7 +37,7 @@ except ImportError as e:
     print(f"Failed to import smplx: {e}")
     sys.exit(1)
 
-from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, PoseByKeypoints
 
 # --- Configuration ---
 MODEL_ROOT = Path("data/body_models").resolve()
@@ -51,52 +59,79 @@ def export_obj(vertices: Tensor, faces: Tensor, file_path: Path) -> None:
             f.write(f"f {face[0] + 1} {face[1] + 1} {face[2] + 1}\n")
     print(f"Exported mesh to {file_path}")
 
-# --- Main Processing Function ---
+def _device_dtype(t: Tensor | None, *, fallback_B: int = 1) -> tuple[torch.device, torch.dtype, int]:
+    if t is not None:
+        return (t.device, t.dtype, t.shape[0])
+    return (torch.device("cpu"), torch.float32, fallback_B)
+
+
 def process_model(model_type: str, gender: str, model_name: str) -> None:
-    """Load, process, and export a specified SMPL model."""
+    """Load, process, and export a specified SMPL-family model.
+
+    - Exports default (identity) mesh
+    - Exports lightly posed mesh
+    - Exports lightly shaped mesh
+    - For SMPL-X, also adds light face and expression changes
+    """
     print(f"--- Processing {model_name} ---")
 
-    # 1. Load the base model
+    # 1) Load base model via official smplx API
     try:
         create_kwargs = dict(
             model_path=str(MODEL_ROOT),
             model_type=model_type,
             gender=gender,
-            use_pca=False,
+            use_pca=False,  # prefer AA hands
             batch_size=1,
         )
-        # For SMPL-H use default PKL models
         base_model = smplx_create(**create_kwargs)
         model = UnifiedSmplModel.from_smpl_model(base_model)
     except Exception as e:
         print(f"Could not load {model_name}: {e}")
         return
 
-    # 2. Export the default T-pose mesh
-    default_inputs = UnifiedSmplInputs()
-    default_output = model(default_inputs)
-    export_obj(default_output.vertices, model.faces, OUTPUT_DIR / f"{model_name}.obj")
+    # 2) Default (identity) mesh
+    out_default = model(UnifiedSmplInputs())
+    export_obj(out_default.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}.obj")
 
-    # 3. Randomize pose and export
-    posed_inputs = UnifiedSmplInputs(
-        pose_body=torch.randn(1, 63) * 1e-2
-    )
-    posed_output = model(posed_inputs)
-    export_obj(posed_output.vertices, model.faces, OUTPUT_DIR / f"{model_name}-posed.obj")
+    # 3) Lightly posed mesh (use PoseByKeypoints for readability)
+    # Minimal body articulation: small elbows twist; add face/hands depending on family
+    rnd = torch.randn(1, 3) * 1e-2
+    kpts = {
+        "root": torch.zeros(1, 3),
+        "left_elbow": rnd.clone(),
+        "right_elbow": -rnd.clone(),
+    }
+    if model_type in ("smplh", "smplx"):
+        # A little curl on index1 fingers
+        kpts["left_index1"] = torch.randn(1, 3) * 1e-2
+        kpts["right_index1"] = torch.randn(1, 3) * 1e-2
+    if model_type == "smplx":
+        # Add slight jaw open and small eye rotations
+        kpts["jaw"] = torch.tensor([[1e-2, 0.0, 0.0]])
+        kpts["left_eye"] = torch.tensor([[0.0, 1e-2, 0.0]])
+        kpts["right_eye"] = torch.tensor([[0.0, -1e-2, 0.0]])
 
-    # 4. Randomize shape and export
-    shaped_inputs = UnifiedSmplInputs(
-        betas=torch.randn(1, model.num_betas) * 1e-1
-    )
-    shaped_output = model(shaped_inputs)
-    export_obj(shaped_output.vertices, model.faces, OUTPUT_DIR / f"{model_name}-shaped.obj")
+    posed_output = model(PoseByKeypoints.from_kwargs(**kpts))
+    export_obj(posed_output.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}-posed.obj")
+
+    # 4) Lightly shaped mesh (betas and expressions for SMPL-X)
+    betas = torch.randn(1, model.num_betas) * 5e-2
+    inputs_shape = {"betas": betas}
+    if model_type == "smplx" and model.num_expressions > 0:
+        inputs_shape["expression"] = torch.randn(1, model.num_expressions) * 5e-2
+    shaped_output = model(UnifiedSmplInputs.from_kwargs(**inputs_shape))
+    export_obj(shaped_output.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}-shaped.obj")
 
 
 if __name__ == "__main__":
-    # Process SMPL-X neutral model
-    process_model(model_type="smplx", gender="neutral", model_name="smplx-neutral")
+    # Process SMPL neutral
+    process_model(model_type="smpl", gender="neutral", model_name="smpl-neutral")
 
-    # Process SMPL-H male model
+    # Process SMPL-H male
     process_model(model_type="smplh", gender="male", model_name="smplh-male")
 
-    print("\n--- All processing complete. ---")
+    # Process SMPL-X neutral
+    process_model(model_type="smplx", gender="neutral", model_name="smplx-neutral")
+
+    print("\n--- All processing complete. Output directory:", OUTPUT_DIR)

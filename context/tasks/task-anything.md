@@ -14,6 +14,10 @@
 - shapedirs: `context/hints/smplx-kb/compare-smpl-shape.md`
 - conversion: `context/hints/smplx-kb/about-smplx-transfer-model.md`
 
+## Reference Source Code and Data
+- `smplx` library: `context/refcode/smplx`, note that it is just for reference, to use `smplx` we have installed it as a dependency
+- `mano` library: `data/body_models/mano_v1_2`, contains both model and source code for loading mano-related models, though `smplx` library can also load mano models (check that)
+
 ## Current Implementation
 
 - unified model class: `src/smplx_toolbox/core/unified_model.py`
