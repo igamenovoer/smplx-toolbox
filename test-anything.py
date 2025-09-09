@@ -3,6 +3,9 @@ import pickle
 import rich
 from rich.console import Console
 from rich.table import Table
+import smplx
+
+smplx.create()
 
 console = Console()
 

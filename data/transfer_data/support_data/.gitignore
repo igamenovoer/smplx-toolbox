@@ -1,0 +1,3 @@
+# Ignore transfer data files
+*.pkl
+*.npz
