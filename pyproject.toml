@@ -40,7 +40,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [ 
     "rich>=14.1.0,<15", 
-    "attrs>=25.3.0,<26", "ipykernel>=6.30.1,<7", "scipy>=1.16.1,<2", "trimesh>=4.8.1,<5",
+    "attrs>=25.3.0,<26", "ipykernel>=6.30.1,<7", "scipy>=1.16.1,<2", "trimesh>=4.8.1,<5", "kornia>=0.8.1,<0.9",
     # Note: PyTorch is NOT included as a dependency
     # Users must install PyTorch themselves based on their hardware
     # Example: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126

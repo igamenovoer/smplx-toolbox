@@ -340,16 +340,16 @@ class SMPLHModel:
             If hand="both": Tuple of (left_joints, right_joints).
         """
         joints = self.get_joint_positions(output, batch_index)
-        
+
         # Hand joints typically start after body joints (index 22)
         left_hand_start = 22
         left_hand_end = left_hand_start + 15
         right_hand_start = left_hand_end
         right_hand_end = right_hand_start + 15
-        
+
         left_hand_joints = joints[left_hand_start:left_hand_end]
         right_hand_joints = joints[right_hand_start:right_hand_end]
-        
+
         if hand == "left":
             return left_hand_joints
         elif hand == "right":

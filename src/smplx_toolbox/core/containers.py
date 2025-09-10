@@ -149,7 +149,7 @@ class UnifiedSmplInputs:
                 return value.shape[0]
         return None
 
-    def check_valid(self, model_type: ModelType | str, *, num_betas: int | None = None, 
+    def check_valid(self, model_type: ModelType | str, *, num_betas: int | None = None,
                     num_expressions: int | None = None) -> None:
         """Verify that tensor presence and shapes are consistent with the model type.
 
@@ -178,7 +178,7 @@ class UnifiedSmplInputs:
 
         if self.trans is not None and self.trans.shape != (batch_size, 3):
             raise ValueError(f"trans must be (B, 3), got {self.trans.shape}")
-        
+
         # Validate betas shape if provided
         if self.betas is not None and num_betas is not None:
             if self.betas.shape[1] != num_betas:
@@ -247,7 +247,7 @@ class UnifiedSmplInputs:
                 raise ValueError(f"left_eye_pose must be (B, 3), got {self.left_eye_pose.shape}")
             if self.right_eye_pose is not None and self.right_eye_pose.shape != (batch_size, 3):
                 raise ValueError(f"right_eye_pose must be (B, 3), got {self.right_eye_pose.shape}")
-            
+
             # Validate expression shape if provided
             if self.expression is not None and num_expressions is not None:
                 if self.expression.shape[1] != num_expressions:
@@ -354,7 +354,7 @@ class UnifiedSmplInputs:
             left_eye_pose = getattr(kpts, "left_eye", None)
             if left_eye_pose is None:
                 left_eye_pose = getattr(kpts, "left_eyeball", None)
-            
+
             right_eye_pose = getattr(kpts, "right_eye", None)
             if right_eye_pose is None:
                 right_eye_pose = getattr(kpts, "right_eyeball", None)
@@ -556,7 +556,7 @@ class PoseByKeypoints:
                 return value.shape[0]
         return None
 
-    def check_valid_by_keypoints(self, model_type: ModelType | str, strict: bool = False, 
+    def check_valid_by_keypoints(self, model_type: ModelType | str, strict: bool = False,
                                   warn_fn: Callable[[str], None] | None = None) -> None:
         """Validate keypoint inputs against model capabilities.
 
@@ -628,34 +628,34 @@ class PoseByKeypoints:
                 "right_ring1", "right_ring2", "right_ring3",
                 "right_pinky1", "right_pinky2", "right_pinky3"
             ]
-            
+
             left_provided = [j for j in left_hand_joints if getattr(self, j, None) is not None]
             right_provided = [j for j in right_hand_joints if getattr(self, j, None) is not None]
-            
+
             if left_provided and len(left_provided) < len(left_hand_joints):
                 msg = f"Partial left hand specification ({len(left_provided)}/15 joints) - missing joints will be zero-filled"
                 if strict:
                     raise ValueError(msg)
                 warn(msg)
-                
+
             if right_provided and len(right_provided) < len(right_hand_joints):
                 msg = f"Partial right hand specification ({len(right_provided)}/15 joints) - missing joints will be zero-filled"
                 if strict:
                     raise ValueError(msg)
                 warn(msg)
-            
+
             # SMPL-H: face not supported
             if self.jaw is not None or self.left_eye is not None or self.right_eye is not None:
                 msg = "SMPL-H does not support face joints - they will be ignored"
                 if strict:
                     raise ValueError(msg)
                 warn(msg)
-        
+
         elif model_type == "smplx":
             # Check for single eye specification
             has_left_eye = self.left_eye is not None or self.left_eyeball is not None
             has_right_eye = self.right_eye is not None or self.right_eyeball is not None
-            
+
             if has_left_eye and not has_right_eye:
                 msg = "Only left eye specified - right eye will be zero-filled"
                 warn(msg)

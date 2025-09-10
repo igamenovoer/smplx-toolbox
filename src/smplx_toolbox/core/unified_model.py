@@ -72,8 +72,8 @@ from torch import Tensor
 # Import from our sub-modules
 from .constants import (
     DeviceLike,
-    ModelType,
     MissingJointFill,
+    ModelType,
     T,
     get_smpl_joint_names,
     get_smplh_joint_names,
@@ -488,7 +488,7 @@ class UnifiedSmplModel:
             joints_unified[:, :22] = joints_raw[:, :22]
             for i in range(22):
                 extras["joint_mapping"][i] = i
-            
+
             # Map hand joints (22-51 -> 25-54)
             joints_unified[:, 25:55] = joints_raw[:, 22:52]
             for i in range(30):
@@ -504,42 +504,42 @@ class UnifiedSmplModel:
         else:  # smpl
             # SMPL: Build mapping based on joint names
             joints_unified = torch.zeros((batch_size, 55, 3), device=device, dtype=dtype)
-            
+
             # Create name-based mapping
             raw_names = get_smpl_joint_names()[:joints_raw.shape[1]]
             unified_names = get_smplx_joint_names()[:55]
-            
+
             for raw_idx, raw_name in enumerate(raw_names):
                 # Find corresponding unified index
                 if raw_name in unified_names:
                     unified_idx = unified_names.index(raw_name)
                     joints_unified[:, unified_idx] = joints_raw[:, raw_idx]
                     extras["joint_mapping"][raw_idx] = unified_idx
-            
+
             # Track missing joints (hands and face)
             missing = []
             for i in range(55):
                 if i not in extras["joint_mapping"].values():
                     missing.append(i)
-                    
+
             # Fill missing joints
             if self.m_missing_joint_fill == MissingJointFill.NAN:
                 for idx in missing:
                     joints_unified[:, idx] = float("nan")
             # else: already zeros
-            
+
             extras["missing_joints"] = missing
 
         return joints_unified, extras
-    
+
     def _get_raw_joint_names(self) -> list[str] | None:
         """Get the raw, model-specific joint names from the wrapped model."""
         if self.m_deformable_model is None:
             return None
-            
+
         if hasattr(self.m_deformable_model, "joint_names"):
             return self.m_deformable_model.joint_names  # type: ignore
-        
+
         # Use default names based on model type
         model_type = self.model_type
         if model_type == "smplx":
@@ -548,7 +548,7 @@ class UnifiedSmplModel:
             return get_smplh_joint_names()
         elif model_type == "smpl":
             return get_smpl_joint_names()
-        
+
         return None
 
     def _compute_full_pose(self, normalized_inputs: dict[str, Tensor]) -> Tensor:

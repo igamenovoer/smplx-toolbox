@@ -9,10 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import numpy as np
 import smplx
 import torch
-import trimesh
 
 from src.smplx_toolbox.core.smplh_model import SMPLHModel
 
@@ -72,54 +70,54 @@ def test_smplh_model():
         # Step 4: Test direct base_model usage with neutral pose
         print("\n[STEP 4] Testing base_model forward pass (neutral)...")
         output = wrapper.base_model(return_verts=True, return_joints=True)
-        print(f"  [OK] Forward pass successful")
+        print("  [OK] Forward pass successful")
         print(f"  - Output vertices shape: {output.vertices.shape}")
         print(f"  - Output joints shape: {output.joints.shape}")
 
         # Step 5: Test to_mesh with output
         print("\n[STEP 5] Testing to_mesh with output...")
         mesh_from_output = wrapper.to_mesh(output)
-        print(f"  [OK] Mesh created from output")
+        print("  [OK] Mesh created from output")
         print(f"  - Vertices: {len(mesh_from_output.vertices)}")
         print(f"  - Faces: {len(mesh_from_output.faces)}")
 
         # Step 6: Test to_mesh with None (neutral pose)
         print("\n[STEP 6] Testing to_mesh with None (neutral)...")
         neutral_mesh = wrapper.to_mesh(None)
-        print(f"  [OK] Neutral mesh created")
+        print("  [OK] Neutral mesh created")
         print(f"  - Vertices: {len(neutral_mesh.vertices)}")
         print(f"  - Faces: {len(neutral_mesh.faces)}")
 
         # Step 7: Test with custom pose (body + hands)
         print("\n[STEP 7] Testing with custom body and hand poses...")
-        
+
         # Prepare pose parameters
         batch_size = 1
         # Get device from the base model to ensure consistency
         device = next(wrapper.base_model.parameters()).device
         print(f"  - Using device: {device}")
-        
+
         # Body pose: 21 joints * 3 (axis-angle) = 63 values, flattened
         body_pose = torch.zeros((batch_size, 63), dtype=torch.float32, device=device)
         body_pose[:, 15*3] = 1.0  # Rotate left shoulder (joint 15, x-axis)
-        
+
         # Hand poses: 15 joints * 3 per hand = 45 values each, flattened
         left_hand_pose = torch.zeros((batch_size, 45), dtype=torch.float32, device=device)
         right_hand_pose = torch.zeros((batch_size, 45), dtype=torch.float32, device=device)
-        
+
         # Add slight finger curl for realism (as suggested in conversion guide)
         # Set small flex for all finger joints (every 3rd value is x-rotation)
         for i in range(0, 45, 3):
             left_hand_pose[:, i] = 0.05  # Small flex (radians)
             right_hand_pose[:, i] = 0.05
-        
+
         # Global orient (root joint) - already flattened
         global_orient = torch.zeros((batch_size, 3), dtype=torch.float32, device=device)
-        
+
         # Shape parameters
         betas = torch.zeros((batch_size, 10), dtype=torch.float32, device=device)
         betas[:, 0] = 0.5  # Slightly larger body
-        
+
         # Forward pass with parameters
         posed_output = wrapper.base_model(
             global_orient=global_orient,
@@ -131,7 +129,7 @@ def test_smplh_model():
             return_joints=True,
         )
         posed_mesh = wrapper.to_mesh(posed_output)
-        print(f"  [OK] Posed mesh created")
+        print("  [OK] Posed mesh created")
 
         # Export meshes
         neutral_path = output_dir / "smplh_neutral.obj"
@@ -143,22 +141,22 @@ def test_smplh_model():
 
         # Step 8: Test joint extraction methods
         print("\n[STEP 8] Testing joint extraction methods...")
-        
+
         # Get all joints
         all_joints = wrapper.get_joint_positions(posed_output)
         print(f"  - All joints shape: {all_joints.shape}")
-        
+
         # Get body joints only
         body_joints = wrapper.get_body_joint_positions(posed_output)
         print(f"  - Body joints shape: {body_joints.shape}")
         print(f"  - First body joint (pelvis): {body_joints[0]}")
-        
+
         # Get hand joints
         left_hand_joints = wrapper.get_hand_joint_positions(posed_output, hand="left")
         right_hand_joints = wrapper.get_hand_joint_positions(posed_output, hand="right")
         print(f"  - Left hand joints shape: {left_hand_joints.shape}")
         print(f"  - Right hand joints shape: {right_hand_joints.shape}")
-        
+
         # Get both hands at once
         left_joints, right_joints = wrapper.get_hand_joint_positions(posed_output, hand="both")
         print(f"  - Both hands returned: {left_joints.shape}, {right_joints.shape}")
@@ -192,7 +190,7 @@ def test_smplh_model():
             # Use a dummy object that's definitely not an SMPLH instance
             class DummyModel:
                 pass
-            
+
             dummy_model = DummyModel()
             SMPLHModel.from_smplh(dummy_model)
             print("  [ERROR] Should have raised ValueError for wrong model type")

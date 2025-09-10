@@ -2,13 +2,13 @@
 Core SMPL-X functionality and model handling.
 """
 
-from .smplx_model import SMPLXModel
 from .smplh_model import SMPLHModel
+from .smplx_model import SMPLXModel
 from .unified_model import (
-    UnifiedSmplModel,
-    UnifiedSmplInputs,
     PoseByKeypoints,
-    UnifiedSmplOutput
+    UnifiedSmplInputs,
+    UnifiedSmplModel,
+    UnifiedSmplOutput,
 )
 
 __all__ = [
