@@ -104,7 +104,9 @@ class ProjectedKeypointMatchLossBuilder(BaseLossBuilder):
                 self.m_reduction = reduction_in
 
             def forward(self, output: UnifiedSmplOutput) -> Tensor:
-                joints = output.joints[:, self.m_indices.to(device=output.joints.device)]
+                joints = output.joints[
+                    :, self.m_indices.to(device=output.joints.device)
+                ]
                 proj = self.m_outer._project(joints)  # (B, n, 2)
 
                 tgt = self.m_target.to(device=proj.device, dtype=proj.dtype)
@@ -153,7 +155,9 @@ class ProjectedKeypointMatchLossBuilder(BaseLossBuilder):
         batch, j_raw, _ = tgt.shape
         expected = {"smpl": 24, "smplh": 52, "smplx": 55}[str(self.model.model_type)]
         if j_raw != expected:
-            raise ValueError(f"target_positions.shape[1] == {j_raw}, expected {expected}")
+            raise ValueError(
+                f"target_positions.shape[1] == {j_raw}, expected {expected}"
+            )
 
         if isinstance(weights, torch.Tensor):
             w = self._prepare_weights(batch, j_raw, weights)

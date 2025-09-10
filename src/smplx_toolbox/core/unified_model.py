@@ -81,9 +81,7 @@ from .constants import (
 )
 from .containers import PoseByKeypoints, UnifiedSmplInputs, UnifiedSmplOutput
 
-__all__ = [
-    "UnifiedSmplModel"
-]
+__all__ = ["UnifiedSmplModel"]
 
 
 class UnifiedSmplModel:
@@ -121,7 +119,7 @@ class UnifiedSmplModel:
         deformable_model: nn.Module,
         *,
         missing_joint_fill: MissingJointFill | str = MissingJointFill.NAN,
-        warn_fn: Callable[[str], None] | None = None
+        warn_fn: Callable[[str], None] | None = None,
     ) -> T:
         """Create a unified model wrapper from an existing SMPL-family model instance.
 
@@ -171,7 +169,11 @@ class UnifiedSmplModel:
             return ModelType(type_name)
 
         # Heuristics based on attributes
-        if hasattr(model, "jaw_pose") or hasattr(model, "leye_pose") or hasattr(model, "reye_pose"):
+        if (
+            hasattr(model, "jaw_pose")
+            or hasattr(model, "leye_pose")
+            or hasattr(model, "reye_pose")
+        ):
             return ModelType.SMPLX
         elif hasattr(model, "left_hand_pose") and hasattr(model, "right_hand_pose"):
             return ModelType.SMPLH
@@ -288,7 +290,9 @@ class UnifiedSmplModel:
             return faces
         raise AttributeError("Model has no faces")
 
-    def _normalize_inputs(self, inputs: UnifiedSmplInputs | PoseByKeypoints) -> dict[str, Tensor]:
+    def _normalize_inputs(
+        self, inputs: UnifiedSmplInputs | PoseByKeypoints
+    ) -> dict[str, Tensor]:
         """Normalize and prepare inputs for the wrapped `smplx` model.
 
         This method handles the conversion from `UnifiedSmplInputs` or
@@ -311,11 +315,15 @@ class UnifiedSmplModel:
 
         # Convert keypoints if needed
         if isinstance(inputs, PoseByKeypoints):
-            inputs.check_valid_by_keypoints(model_type, strict=False, warn_fn=self.m_warn_fn)
+            inputs.check_valid_by_keypoints(
+                model_type, strict=False, warn_fn=self.m_warn_fn
+            )
             inputs = UnifiedSmplInputs.from_keypoint_pose(inputs, model_type=model_type)
 
         # Validate inputs (beta/expr count adapted later)
-        inputs.check_valid(model_type, num_betas=None, num_expressions=self.num_expressions)
+        inputs.check_valid(
+            model_type, num_betas=None, num_expressions=self.num_expressions
+        )
 
         # Route through input conversion helpers (AA-space)
         if model_type == "smpl":
@@ -338,7 +346,9 @@ class UnifiedSmplModel:
         normalized: dict[str, Tensor | bool] = {}
 
         # Global orient
-        normalized["global_orient"] = ensure(input_dict.get("global_orient", None), (batch_size, 3))
+        normalized["global_orient"] = ensure(
+            input_dict.get("global_orient", None), (batch_size, 3)
+        )
 
         # Body pose: pad to 69 for SMPL
         body_pose_63 = ensure(input_dict.get("body_pose", None), (batch_size, 63))
@@ -353,7 +363,9 @@ class UnifiedSmplModel:
             b = inputs.betas.to(device=device, dtype=dtype)
             nb = self.num_betas
             if b.shape[1] < nb:
-                pad_b = torch.zeros((b.shape[0], nb - b.shape[1]), device=device, dtype=dtype)
+                pad_b = torch.zeros(
+                    (b.shape[0], nb - b.shape[1]), device=device, dtype=dtype
+                )
                 b = torch.cat([b, pad_b], dim=1)
             elif b.shape[1] > nb:
                 if self.m_warn_fn:
@@ -380,13 +392,17 @@ class UnifiedSmplModel:
                 lh_mean = getattr(model, "left_hand_mean", None)
                 rh_mean = getattr(model, "right_hand_mean", None)
 
-                def aa_to_pca(aa: Tensor | None, comp: Tensor | None, mean: Tensor | None) -> Tensor:
+                def aa_to_pca(
+                    aa: Tensor | None, comp: Tensor | None, mean: Tensor | None
+                ) -> Tensor:
                     K = int(getattr(model, "num_pca_comps", 6))
                     if aa is None:
                         return torch.zeros((batch_size, K), device=device, dtype=dtype)
                     if comp is None:
                         if self.m_warn_fn:
-                            self.m_warn_fn("Missing hand PCA components; using zeros for coefficients")
+                            self.m_warn_fn(
+                                "Missing hand PCA components; using zeros for coefficients"
+                            )
                         return torch.zeros((aa.shape[0], K), device=device, dtype=dtype)
                     # Shapes: comp: (K,45), aa: (B,45), mean: (45,)
                     aa_tgt = aa.to(device=device, dtype=dtype)
@@ -409,24 +425,40 @@ class UnifiedSmplModel:
                 normalized["right_hand_pose"] = aa_to_pca(rh_aa, rh_comp, rh_mean)
             else:
                 # Pass AA(45) directly
-                normalized["left_hand_pose"] = ensure(input_dict.get("left_hand_pose", None), (batch_size, 45))
-                normalized["right_hand_pose"] = ensure(input_dict.get("right_hand_pose", None), (batch_size, 45))
+                normalized["left_hand_pose"] = ensure(
+                    input_dict.get("left_hand_pose", None), (batch_size, 45)
+                )
+                normalized["right_hand_pose"] = ensure(
+                    input_dict.get("right_hand_pose", None), (batch_size, 45)
+                )
 
         # SMPL-X specifics (jaw/eyes/expressions)
         if model_type == "smplx":
-            normalized["jaw_pose"] = ensure(input_dict.get("jaw_pose", None), (batch_size, 3))
-            normalized["leye_pose"] = ensure(input_dict.get("leye_pose", None), (batch_size, 3))
-            normalized["reye_pose"] = ensure(input_dict.get("reye_pose", None), (batch_size, 3))
+            normalized["jaw_pose"] = ensure(
+                input_dict.get("jaw_pose", None), (batch_size, 3)
+            )
+            normalized["leye_pose"] = ensure(
+                input_dict.get("leye_pose", None), (batch_size, 3)
+            )
+            normalized["reye_pose"] = ensure(
+                input_dict.get("reye_pose", None), (batch_size, 3)
+            )
 
             num_expr = self.num_expressions
             if num_expr > 0:
                 expr_in = input_dict.get("expression", None)
                 if expr_in is None:
-                    normalized["expression"] = torch.zeros((batch_size, num_expr), device=device, dtype=dtype)
+                    normalized["expression"] = torch.zeros(
+                        (batch_size, num_expr), device=device, dtype=dtype
+                    )
                 else:
                     e = expr_in.to(device=device, dtype=dtype)
                     if e.shape[1] < num_expr:
-                        pad_e = torch.zeros((e.shape[0], num_expr - e.shape[1]), device=device, dtype=dtype)
+                        pad_e = torch.zeros(
+                            (e.shape[0], num_expr - e.shape[1]),
+                            device=device,
+                            dtype=dtype,
+                        )
                         e = torch.cat([e, pad_e], dim=1)
                     elif e.shape[1] > num_expr:
                         if self.m_warn_fn:
@@ -441,7 +473,9 @@ class UnifiedSmplModel:
 
         return normalized  # type: ignore[return-value]
 
-    def _unify_joints(self, joints_raw: Tensor, model_type: ModelType | str) -> tuple[Tensor, dict[str, Any]]:
+    def _unify_joints(
+        self, joints_raw: Tensor, model_type: ModelType | str
+    ) -> tuple[Tensor, dict[str, Any]]:
         """Convert raw model joints to the unified 55-joint SMPL-X set.
 
         This method maps the joint output from any SMPL-family model to the
@@ -469,7 +503,7 @@ class UnifiedSmplModel:
         extras: dict[str, Any] = {
             "joints_raw": joints_raw,
             "joint_mapping": {},  # raw_idx -> unified_idx
-            "joint_names_raw": self._get_raw_joint_names()
+            "joint_names_raw": self._get_raw_joint_names(),
         }
 
         if model_type == "smplx":
@@ -482,7 +516,9 @@ class UnifiedSmplModel:
         elif model_type == "smplh":
             # SMPL-H: has body (22) + hands (30) = 52 joints
             # Add placeholders for face joints (jaw, left_eye, right_eye)
-            joints_unified = torch.zeros((batch_size, 55, 3), device=device, dtype=dtype)
+            joints_unified = torch.zeros(
+                (batch_size, 55, 3), device=device, dtype=dtype
+            )
 
             # Map body joints (0-21 -> 0-21)
             joints_unified[:, :22] = joints_raw[:, :22]
@@ -503,10 +539,12 @@ class UnifiedSmplModel:
 
         else:  # smpl
             # SMPL: Build mapping based on joint names
-            joints_unified = torch.zeros((batch_size, 55, 3), device=device, dtype=dtype)
+            joints_unified = torch.zeros(
+                (batch_size, 55, 3), device=device, dtype=dtype
+            )
 
             # Create name-based mapping
-            raw_names = get_smpl_joint_names()[:joints_raw.shape[1]]
+            raw_names = get_smpl_joint_names()[: joints_raw.shape[1]]
             unified_names = get_smplx_joint_names()[:55]
 
             for raw_idx, raw_name in enumerate(raw_names):
@@ -613,7 +651,9 @@ class UnifiedSmplModel:
                         return torch.zeros((1, 45), device=device, dtype=dtype)
                     if comp is None:
                         # Fallback to zeros with AA size if components unavailable
-                        return torch.zeros((p.shape[0], 45), device=p.device, dtype=p.dtype)
+                        return torch.zeros(
+                            (p.shape[0], 45), device=p.device, dtype=p.dtype
+                        )
                     # Ensure comp is on same device/dtype
                     comp_t = comp.to(device=p.device, dtype=p.dtype)
                     # bi,ij->bj : (B, K) @ (K, 45) => (B, 45)
@@ -638,7 +678,9 @@ class UnifiedSmplModel:
                 batch_size = normalized_inputs["global_orient"].shape[0]
             return torch.zeros((batch_size, 3), device=self.device, dtype=self.dtype)
 
-    def __call__(self, inputs: UnifiedSmplInputs | PoseByKeypoints) -> UnifiedSmplOutput:
+    def __call__(
+        self, inputs: UnifiedSmplInputs | PoseByKeypoints
+    ) -> UnifiedSmplOutput:
         """Forward pass through the model. See `forward` for details."""
         return self.forward(inputs)
 
@@ -693,7 +735,7 @@ class UnifiedSmplModel:
             faces=self.faces,
             joints=joints_unified,
             full_pose=full_pose,
-            extras=extras
+            extras=extras,
         )
 
     def to(self, device: DeviceLike) -> UnifiedSmplModel:  # noqa: ARG002
@@ -773,7 +815,7 @@ class UnifiedSmplModel:
         self,
         joints: Tensor,
         indices: list[int] | Tensor | None = None,
-        names: list[str] | None = None
+        names: list[str] | None = None,
     ) -> Tensor:
         """Select a subset of joints by their indices or names.
 

@@ -86,7 +86,7 @@ def _remap_encoder_keys(sd: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     out: dict[str, torch.Tensor] = {}
     for k, v in sd.items():
         if k.startswith("encoder_net."):
-            rest = k[len("encoder_net."):]
+            rest = k[len("encoder_net.") :]
             if rest.startswith("8."):
                 out["encoder_head." + rest[2:]] = v
             else:

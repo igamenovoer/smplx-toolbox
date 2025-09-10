@@ -139,20 +139,40 @@ class SMPLSpecialJoint(StrEnum):
 
 # Left hand joints in canonical skeleton mapping order
 _LEFT_HAND_JOINTS = [
-    HandFingerJoint.LEFT_INDEX1, HandFingerJoint.LEFT_INDEX2, HandFingerJoint.LEFT_INDEX3,
-    HandFingerJoint.LEFT_MIDDLE1, HandFingerJoint.LEFT_MIDDLE2, HandFingerJoint.LEFT_MIDDLE3,
-    HandFingerJoint.LEFT_PINKY1, HandFingerJoint.LEFT_PINKY2, HandFingerJoint.LEFT_PINKY3,
-    HandFingerJoint.LEFT_RING1, HandFingerJoint.LEFT_RING2, HandFingerJoint.LEFT_RING3,
-    HandFingerJoint.LEFT_THUMB1, HandFingerJoint.LEFT_THUMB2, HandFingerJoint.LEFT_THUMB3,
+    HandFingerJoint.LEFT_INDEX1,
+    HandFingerJoint.LEFT_INDEX2,
+    HandFingerJoint.LEFT_INDEX3,
+    HandFingerJoint.LEFT_MIDDLE1,
+    HandFingerJoint.LEFT_MIDDLE2,
+    HandFingerJoint.LEFT_MIDDLE3,
+    HandFingerJoint.LEFT_PINKY1,
+    HandFingerJoint.LEFT_PINKY2,
+    HandFingerJoint.LEFT_PINKY3,
+    HandFingerJoint.LEFT_RING1,
+    HandFingerJoint.LEFT_RING2,
+    HandFingerJoint.LEFT_RING3,
+    HandFingerJoint.LEFT_THUMB1,
+    HandFingerJoint.LEFT_THUMB2,
+    HandFingerJoint.LEFT_THUMB3,
 ]
 
 # Right hand joints in canonical skeleton mapping order
 _RIGHT_HAND_JOINTS = [
-    HandFingerJoint.RIGHT_INDEX1, HandFingerJoint.RIGHT_INDEX2, HandFingerJoint.RIGHT_INDEX3,
-    HandFingerJoint.RIGHT_MIDDLE1, HandFingerJoint.RIGHT_MIDDLE2, HandFingerJoint.RIGHT_MIDDLE3,
-    HandFingerJoint.RIGHT_PINKY1, HandFingerJoint.RIGHT_PINKY2, HandFingerJoint.RIGHT_PINKY3,
-    HandFingerJoint.RIGHT_RING1, HandFingerJoint.RIGHT_RING2, HandFingerJoint.RIGHT_RING3,
-    HandFingerJoint.RIGHT_THUMB1, HandFingerJoint.RIGHT_THUMB2, HandFingerJoint.RIGHT_THUMB3,
+    HandFingerJoint.RIGHT_INDEX1,
+    HandFingerJoint.RIGHT_INDEX2,
+    HandFingerJoint.RIGHT_INDEX3,
+    HandFingerJoint.RIGHT_MIDDLE1,
+    HandFingerJoint.RIGHT_MIDDLE2,
+    HandFingerJoint.RIGHT_MIDDLE3,
+    HandFingerJoint.RIGHT_PINKY1,
+    HandFingerJoint.RIGHT_PINKY2,
+    HandFingerJoint.RIGHT_PINKY3,
+    HandFingerJoint.RIGHT_RING1,
+    HandFingerJoint.RIGHT_RING2,
+    HandFingerJoint.RIGHT_RING3,
+    HandFingerJoint.RIGHT_THUMB1,
+    HandFingerJoint.RIGHT_THUMB2,
+    HandFingerJoint.RIGHT_THUMB3,
 ]
 
 
@@ -240,14 +260,17 @@ def get_joint_index(joint_name: str, model_type: ModelType | str) -> int:
 
     if joint_name not in mapping:
         available_joints = list(mapping.keys())
-        raise KeyError(f"Joint '{joint_name}' not found in {model_type} model. "
-                      f"Available joints: {available_joints}")
+        raise KeyError(
+            f"Joint '{joint_name}' not found in {model_type} model. "
+            f"Available joints: {available_joints}"
+        )
 
     return mapping[joint_name]
 
 
 # Explicit joint name-to-index mappings
 # These make the joint ordering completely explicit and self-documenting
+
 
 def _build_smpl_joint_mapping() -> dict[str, int]:
     """Build SMPL joint name-to-index mapping using enum values."""
@@ -266,7 +289,9 @@ def _build_smpl_joint_mapping() -> dict[str, int]:
 
     return mapping
 
+
 SMPL_JOINT_NAME_TO_INDEX: dict[str, int] = _build_smpl_joint_mapping()
+
 
 def _build_smplh_joint_mapping() -> dict[str, int]:
     """Build SMPL-H joint name-to-index mapping using enum values."""
@@ -290,7 +315,9 @@ def _build_smplh_joint_mapping() -> dict[str, int]:
 
     return mapping
 
+
 SMPLH_JOINT_NAME_TO_INDEX: dict[str, int] = _build_smplh_joint_mapping()
+
 
 def _build_smplx_joint_mapping() -> dict[str, int]:
     """Build SMPL-X joint name-to-index mapping using enum values."""
@@ -318,6 +345,7 @@ def _build_smplx_joint_mapping() -> dict[str, int]:
         index += 1
 
     return mapping
+
 
 SMPLX_JOINT_NAME_TO_INDEX: dict[str, int] = _build_smplx_joint_mapping()
 

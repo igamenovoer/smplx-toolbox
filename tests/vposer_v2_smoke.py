@@ -57,7 +57,9 @@ latentD = int(sd["vp_model.encoder_net.8.mu.weight"].shape[0])
 vp = VPoser(_ModelPS(_ModelParams(num_neurons=num_neurons, latentD=latentD)))
 vp.eval()
 
-weights = {k.replace("vp_model.", "", 1): v for k, v in sd.items() if k.startswith("vp_model.")}
+weights = {
+    k.replace("vp_model.", "", 1): v for k, v in sd.items() if k.startswith("vp_model.")
+}
 missing, unexpected = vp.load_state_dict(weights, strict=False)
 if unexpected:
     raise RuntimeError(f"Unexpected keys: {unexpected}")
@@ -73,4 +75,3 @@ with torch.no_grad():
     pose_aa = torch.zeros(1, 21, 3)
     qz = vp.encode(pose_aa.reshape(1, -1))
     print("Latent mean/std shapes:", qz.mean.shape, qz.scale.shape)
-

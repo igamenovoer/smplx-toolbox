@@ -16,18 +16,49 @@ Notes
   3 DoF per joint (axis‑angle), i.e. 63 DoF in total.
 - The returned dictionary from :meth:`VPoserModel.decode` includes both
   axis‑angle and rotation‑matrix representations.
+
+Input/Output Mapping for Body Pose (21 joints)
+----------------------------------------------
+VPoser expects the body joint axis‑angle in a fixed 21‑joint order (pelvis/root
+excluded). We adopt the exact body ordering already used throughout this
+toolbox to construct 63‑DoF body poses (see
+`src/smplx_toolbox/core/containers.py:UnifiedSmplInputs.from_keypoint_pose`):
+
+    [left_hip, right_hip, spine1, left_knee, right_knee, spine2,
+     left_ankle, right_ankle, spine3, left_foot, right_foot,
+     neck, left_collar, right_collar, head,
+     left_shoulder, right_shoulder, left_elbow, right_elbow, left_wrist, right_wrist]
+
+Why this is correct and how to verify:
+- Upstream VPoser (context/refcode/human_body_prior/models/vposer_model.py) sets
+  `self.num_joints = 21` and `decode()` returns a dict with `pose_body` of shape
+  `(B, 21, 3)`. That confirms the 21‑joint body target in axis‑angle.
+- Our unified model/containers already define the canonical body AA order used
+  to create a `(B, 63)` vector (see the body_joints list used to assemble
+  `pose_body` in `UnifiedSmplInputs.from_keypoint_pose`). Aligning VPoser’s
+  input ordering with this list ensures consistency across the toolbox.
+- Practically: encode any `(B, 63)` body AA built with that order, decode back,
+  and verify joints align joint‑wise (except small reconstruction error from the
+  VAE). See the helpers below.
+
+Use :meth:`convert_struct_to_pose` to build a `(B, 63)` tensor from a
+`PoseByKeypoints`, and :meth:`convert_pose_to_struct` to go back. This helps
+inspect exactly what VPoser consumes/produces without memorizing indices.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from torch.distributions import Normal
+
+from smplx_toolbox.core.constants import CoreBodyJoint
+from smplx_toolbox.core.containers import PoseByKeypoints
 
 
 class BatchFlatten(nn.Module):
@@ -193,7 +224,9 @@ class VPoserModel(nn.Module):
             nn.Linear(cfg.num_neurons, cfg.num_neurons),
             nn.Linear(cfg.num_neurons, cfg.num_neurons),
         )
-        self.encoder_head: NormalDistDecoder = NormalDistDecoder(cfg.num_neurons, cfg.latent_dim)
+        self.encoder_head: NormalDistDecoder = NormalDistDecoder(
+            cfg.num_neurons, cfg.latent_dim
+        )
 
         self.decoder_net: nn.Sequential = nn.Sequential(
             nn.Linear(cfg.latent_dim, cfg.num_neurons),
@@ -235,7 +268,7 @@ class VPoserModel(nn.Module):
         feats = self.encoder_backbone(pose_body)
         return self.encoder_head.forward(feats)
 
-    def decode(self, z: Tensor) -> Dict[str, Tensor]:
+    def decode(self, z: Tensor) -> dict[str, Tensor]:
         """Decode latent vectors to body pose.
 
         Parameters
@@ -263,7 +296,7 @@ class VPoserModel(nn.Module):
             "pose_body_matrot": mats.reshape(bs, self.num_joints, 9),
         }
 
-    def forward(self, pose_body: Tensor) -> Dict[str, Any]:
+    def forward(self, pose_body: Tensor) -> dict[str, Any]:
         """Encode then decode a body pose in a single call.
 
         Parameters
@@ -282,10 +315,130 @@ class VPoserModel(nn.Module):
         q_z = self.encode(pose_body)
         z = q_z.rsample()
         out = self.decode(z)
-        extras: Dict[str, Any] = {
+        extras: dict[str, Any] = {
             "poZ_body_mean": q_z.mean,
             "poZ_body_std": q_z.scale,
             "q_z": q_z,
         }
         out.update(extras)
         return out
+
+    # ------------------------------------------------------------------
+    # Convenience utilities for PoseByKeypoints interop
+    # ------------------------------------------------------------------
+    @staticmethod
+    def convert_struct_to_pose(kpts: PoseByKeypoints) -> Tensor:
+        """Build a (B, 63) body axis‑angle from ``PoseByKeypoints``.
+
+        The joint order matches the 21‑joint body layout used by VPoser and
+        `UnifiedSmplInputs.from_keypoint_pose()`.
+
+        Parameters
+        ----------
+        kpts : PoseByKeypoints
+            Per‑joint axis‑angle specification (only body joints are used).
+
+        Returns
+        -------
+        torch.Tensor
+            Body pose axis‑angle of shape ``(B, 63)`` suitable for :meth:`encode`.
+        """
+        body_joints = [
+            CoreBodyJoint.LEFT_HIP,
+            CoreBodyJoint.RIGHT_HIP,
+            CoreBodyJoint.SPINE1,
+            CoreBodyJoint.LEFT_KNEE,
+            CoreBodyJoint.RIGHT_KNEE,
+            CoreBodyJoint.SPINE2,
+            CoreBodyJoint.LEFT_ANKLE,
+            CoreBodyJoint.RIGHT_ANKLE,
+            CoreBodyJoint.SPINE3,
+            CoreBodyJoint.LEFT_FOOT,
+            CoreBodyJoint.RIGHT_FOOT,
+            CoreBodyJoint.NECK,
+            CoreBodyJoint.LEFT_COLLAR,
+            CoreBodyJoint.RIGHT_COLLAR,
+            CoreBodyJoint.HEAD,
+            CoreBodyJoint.LEFT_SHOULDER,
+            CoreBodyJoint.RIGHT_SHOULDER,
+            CoreBodyJoint.LEFT_ELBOW,
+            CoreBodyJoint.RIGHT_ELBOW,
+            CoreBodyJoint.LEFT_WRIST,
+            CoreBodyJoint.RIGHT_WRIST,
+        ]
+
+        # Infer batch/device/dtype from the first available joint
+        batch: int | None = kpts.batch_size()
+        if batch is None:
+            batch = 1
+        device = None
+        dtype = torch.float32
+        for enum_name in body_joints:
+            name = enum_name.value
+            val = getattr(kpts, name, None)
+            if isinstance(val, Tensor):
+                device = val.device
+                dtype = val.dtype
+                break
+
+        def get_or_zeros(name: str) -> Tensor:
+            val = getattr(kpts, name, None)
+            if isinstance(val, Tensor):
+                return val
+            return torch.zeros((batch or 1, 3), device=device, dtype=dtype)
+
+        parts = [get_or_zeros(e.value) for e in body_joints]
+        return torch.cat(parts, dim=-1)  # (B, 63)
+
+    @staticmethod
+    def convert_pose_to_struct(pose_body: Tensor) -> PoseByKeypoints:
+        """Convert a body AA pose to a ``PoseByKeypoints`` instance.
+
+        Parameters
+        ----------
+        pose_body : torch.Tensor
+            Body pose as axis‑angle with shape ``(B, 63)`` or ``(B, 21, 3)``.
+
+        Returns
+        -------
+        PoseByKeypoints
+            A new instance with body joint fields populated; all other fields
+            (root, hands, face) remain ``None``.
+        """
+        if pose_body.dim() == 2 and pose_body.shape[1] == 63:
+            B = pose_body.shape[0]
+            body = pose_body.view(B, 21, 3)
+        elif pose_body.dim() == 3 and pose_body.shape[1:] == (21, 3):
+            body = pose_body
+            B = body.shape[0]
+        else:
+            raise ValueError("pose_body must be (B,63) or (B,21,3)")
+
+        names = [
+            CoreBodyJoint.LEFT_HIP.value,
+            CoreBodyJoint.RIGHT_HIP.value,
+            CoreBodyJoint.SPINE1.value,
+            CoreBodyJoint.LEFT_KNEE.value,
+            CoreBodyJoint.RIGHT_KNEE.value,
+            CoreBodyJoint.SPINE2.value,
+            CoreBodyJoint.LEFT_ANKLE.value,
+            CoreBodyJoint.RIGHT_ANKLE.value,
+            CoreBodyJoint.SPINE3.value,
+            CoreBodyJoint.LEFT_FOOT.value,
+            CoreBodyJoint.RIGHT_FOOT.value,
+            CoreBodyJoint.NECK.value,
+            CoreBodyJoint.LEFT_COLLAR.value,
+            CoreBodyJoint.RIGHT_COLLAR.value,
+            CoreBodyJoint.HEAD.value,
+            CoreBodyJoint.LEFT_SHOULDER.value,
+            CoreBodyJoint.RIGHT_SHOULDER.value,
+            CoreBodyJoint.LEFT_ELBOW.value,
+            CoreBodyJoint.RIGHT_ELBOW.value,
+            CoreBodyJoint.LEFT_WRIST.value,
+            CoreBodyJoint.RIGHT_WRIST.value,
+        ]
+
+        kwargs: dict[str, Tensor] = {}
+        for i, name in enumerate(names):
+            kwargs[name] = body[:, i]
+        return PoseByKeypoints.from_kwargs(**kwargs)

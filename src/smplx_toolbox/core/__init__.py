@@ -17,5 +17,5 @@ __all__ = [
     "UnifiedSmplModel",
     "UnifiedSmplInputs",
     "PoseByKeypoints",
-    "UnifiedSmplOutput"
+    "UnifiedSmplOutput",
 ]

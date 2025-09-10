@@ -20,10 +20,30 @@ To become the go-to toolkit for researchers, developers, and artists working wit
 
 ## Currently Working
 
-**Keypoint-Based Fitting Implementation (In Progress)**
-- Implementing unified keypoint-based fitting system for all SMPL model variants (SMPL, SMPL-H, SMPL-X)
-- Developing optimization framework for fitting model parameters to 2D/3D keypoint data
-- Creating consistent API for pose estimation and body shape inference across model types
+Keypoint-Based Fitting (implemented; pending validation on real data)
+- [x] Loss builders (under `src/smplx_toolbox/optimization/`)
+  - [x] `KeypointMatchLossBuilder` (3D, unified names + packed native order)
+  - [x] `ProjectedKeypointMatchLossBuilder` (2D via camera projection)
+  - [x] `ShapePriorLossBuilder` (L2 on betas)
+  - [x] `AnglePriorLossBuilder` (heuristic knees/elbows)
+- [x] VPoser prior
+  - [x] `VPoserPriorLossBuilder.by_pose_latent(z, weight)` (L2 on latent)
+  - [x] `VPoserPriorLossBuilder.by_pose(pose, w_pose_fit, w_latent_l2)` (self‑reconstruction + latent L2)
+  - [x] Convenience: `encode_pose_to_latent`, `decode_latent_to_pose`
+- [x] Robustification utilities: `GMoF` module and functional `gmof`
+- [x] Unified model exposes `extras['betas']` for shape prior
+- [x] VPoser runtime + interop helpers
+  - [x] Minimal `VPoserModel` (v2‑compatible) encode/decode
+  - [x] `convert_struct_to_pose(PoseByKeypoints) -> (B,63)`
+  - [x] `convert_pose_to_struct((B,63)/(B,21,3)) -> PoseByKeypoints`
+- [x] Documentation
+  - [x] `context/tasks/features/keypoint-match/task-vposer-prior.md` (single source of truth)
+  - [x] `docs/vposer.md` (runtime usage and mapping helpers)
+
+Pending next
+- [ ] Validate on real 2D/3D detections and full optimization schedules
+- [ ] Add targeted unit tests and minimal examples for each builder
+- [ ] Tune robustifier scales/default weights based on validation results
 
 ## Development Timeline
 

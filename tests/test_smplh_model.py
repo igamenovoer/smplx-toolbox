@@ -65,7 +65,7 @@ def test_smplh_model():
 
         print("\n  - First 5 left hand joints:")
         for i, name in enumerate(wrapper.joint_names[22:27]):
-            print(f"    {i+22}: {name}")
+            print(f"    {i + 22}: {name}")
 
         # Step 4: Test direct base_model usage with neutral pose
         print("\n[STEP 4] Testing base_model forward pass (neutral)...")
@@ -99,11 +99,15 @@ def test_smplh_model():
 
         # Body pose: 21 joints * 3 (axis-angle) = 63 values, flattened
         body_pose = torch.zeros((batch_size, 63), dtype=torch.float32, device=device)
-        body_pose[:, 15*3] = 1.0  # Rotate left shoulder (joint 15, x-axis)
+        body_pose[:, 15 * 3] = 1.0  # Rotate left shoulder (joint 15, x-axis)
 
         # Hand poses: 15 joints * 3 per hand = 45 values each, flattened
-        left_hand_pose = torch.zeros((batch_size, 45), dtype=torch.float32, device=device)
-        right_hand_pose = torch.zeros((batch_size, 45), dtype=torch.float32, device=device)
+        left_hand_pose = torch.zeros(
+            (batch_size, 45), dtype=torch.float32, device=device
+        )
+        right_hand_pose = torch.zeros(
+            (batch_size, 45), dtype=torch.float32, device=device
+        )
 
         # Add slight finger curl for realism (as suggested in conversion guide)
         # Set small flex for all finger joints (every 3rd value is x-rotation)
@@ -158,7 +162,9 @@ def test_smplh_model():
         print(f"  - Right hand joints shape: {right_hand_joints.shape}")
 
         # Get both hands at once
-        left_joints, right_joints = wrapper.get_hand_joint_positions(posed_output, hand="both")
+        left_joints, right_joints = wrapper.get_hand_joint_positions(
+            posed_output, hand="both"
+        )
         print(f"  - Both hands returned: {left_joints.shape}, {right_joints.shape}")
 
         # Step 9: Test with vertex colors
@@ -180,7 +186,9 @@ def test_smplh_model():
         y_extent = bounds[1, 1] - bounds[0, 1]
         z_extent = bounds[1, 2] - bounds[0, 2]
         x_extent = bounds[1, 0] - bounds[0, 0]
-        assert y_extent > z_extent and y_extent > x_extent, "Y should be the largest (height)"
+        assert y_extent > z_extent and y_extent > x_extent, (
+            "Y should be the largest (height)"
+        )
         print("  [OK] Standard SMPL-H coordinate system verified (Y-up)")
 
         # Step 11: Test error handling
@@ -217,6 +225,7 @@ def test_smplh_model():
     except Exception as e:
         print(f"\n[ERROR] Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

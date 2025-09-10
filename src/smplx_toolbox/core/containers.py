@@ -69,27 +69,29 @@ class UnifiedSmplInputs:
 
     # Pose parameters (axis-angle in radians)
     root_orient: Tensor | None = None  # (B, 3) - pelvis/global orientation
-    pose_body: Tensor | None = None    # (B, 63) - 21 body joints * 3
-    left_hand_pose: Tensor | None = None   # (B, 45) - 15 finger joints * 3
+    pose_body: Tensor | None = None  # (B, 63) - 21 body joints * 3
+    left_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
     right_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
-    pose_jaw: Tensor | None = None     # (B, 3) - jaw joint (SMPL-X only)
-    left_eye_pose: Tensor | None = None   # (B, 3) - left eyeball (SMPL-X only)
+    pose_jaw: Tensor | None = None  # (B, 3) - jaw joint (SMPL-X only)
+    left_eye_pose: Tensor | None = None  # (B, 3) - left eyeball (SMPL-X only)
     right_eye_pose: Tensor | None = None  # (B, 3) - right eyeball (SMPL-X only)
 
     # Shape and expression
-    betas: Tensor | None = None        # (B, n_betas) - shape parameters
-    expression: Tensor | None = None   # (B, n_expr) - facial expression (SMPL-X only)
-    hand_betas: Tensor | None = None   # (B, H) - optional MANO hand shape (SMPL-H MANO variant)
-    use_hand_pca: bool | None = None   # Hint: whether hands are PCA in the base model
+    betas: Tensor | None = None  # (B, n_betas) - shape parameters
+    expression: Tensor | None = None  # (B, n_expr) - facial expression (SMPL-X only)
+    hand_betas: Tensor | None = (
+        None  # (B, H) - optional MANO hand shape (SMPL-H MANO variant)
+    )
+    use_hand_pca: bool | None = None  # Hint: whether hands are PCA in the base model
     num_hand_pca_comps: int | None = None  # Hint: number of PCA comps if PCA is used
 
     # Translation
-    trans: Tensor | None = None        # (B, 3) - global translation
+    trans: Tensor | None = None  # (B, 3) - global translation
 
     # Advanced (may be ignored by some models)
-    v_template: Tensor | None = None   # (B, V, 3) - custom template vertices
+    v_template: Tensor | None = None  # (B, V, 3) - custom template vertices
     joints_override: Tensor | None = None  # (B, J*, 3) - custom joint positions
-    v_shaped: Tensor | None = None     # (B, V, 3) - shaped vertices
+    v_shaped: Tensor | None = None  # (B, V, 3) - shaped vertices
 
     @property
     def hand_pose(self) -> Tensor | None:
@@ -149,8 +151,13 @@ class UnifiedSmplInputs:
                 return value.shape[0]
         return None
 
-    def check_valid(self, model_type: ModelType | str, *, num_betas: int | None = None,
-                    num_expressions: int | None = None) -> None:
+    def check_valid(
+        self,
+        model_type: ModelType | str,
+        *,
+        num_betas: int | None = None,
+        num_expressions: int | None = None,
+    ) -> None:
         """Verify that tensor presence and shapes are consistent with the model type.
 
         Parameters
@@ -171,7 +178,9 @@ class UnifiedSmplInputs:
 
         # Common shape checks
         if self.root_orient is not None and self.root_orient.shape != (batch_size, 3):
-            raise ValueError(f"root_orient must be (B, 3), got {self.root_orient.shape}")
+            raise ValueError(
+                f"root_orient must be (B, 3), got {self.root_orient.shape}"
+            )
 
         if self.pose_body is not None and self.pose_body.shape != (batch_size, 63):
             raise ValueError(f"pose_body must be (B, 63), got {self.pose_body.shape}")
@@ -208,12 +217,24 @@ class UnifiedSmplInputs:
             has_right = self.right_hand_pose is not None
 
             if has_left != has_right:
-                raise ValueError("SMPL-H requires both left and right hand poses or neither")
+                raise ValueError(
+                    "SMPL-H requires both left and right hand poses or neither"
+                )
 
-            if self.left_hand_pose is not None and self.left_hand_pose.shape != (batch_size, 45):
-                raise ValueError(f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}")
-            if self.right_hand_pose is not None and self.right_hand_pose.shape != (batch_size, 45):
-                raise ValueError(f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}")
+            if self.left_hand_pose is not None and self.left_hand_pose.shape != (
+                batch_size,
+                45,
+            ):
+                raise ValueError(
+                    f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}"
+                )
+            if self.right_hand_pose is not None and self.right_hand_pose.shape != (
+                batch_size,
+                45,
+            ):
+                raise ValueError(
+                    f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}"
+                )
 
             if self.pose_jaw is not None:
                 raise ValueError("SMPL-H does not support jaw pose")
@@ -231,22 +252,46 @@ class UnifiedSmplInputs:
             has_right_eye = self.right_eye_pose is not None
 
             if has_left_hand != has_right_hand:
-                raise ValueError("SMPL-X requires both left and right hand poses or neither")
+                raise ValueError(
+                    "SMPL-X requires both left and right hand poses or neither"
+                )
             if has_left_eye != has_right_eye:
-                raise ValueError("SMPL-X requires both left and right eye poses or neither")
+                raise ValueError(
+                    "SMPL-X requires both left and right eye poses or neither"
+                )
 
-            if self.left_hand_pose is not None and self.left_hand_pose.shape != (batch_size, 45):
-                raise ValueError(f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}")
-            if self.right_hand_pose is not None and self.right_hand_pose.shape != (batch_size, 45):
-                raise ValueError(f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}")
+            if self.left_hand_pose is not None and self.left_hand_pose.shape != (
+                batch_size,
+                45,
+            ):
+                raise ValueError(
+                    f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}"
+                )
+            if self.right_hand_pose is not None and self.right_hand_pose.shape != (
+                batch_size,
+                45,
+            ):
+                raise ValueError(
+                    f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}"
+                )
 
             if self.pose_jaw is not None and self.pose_jaw.shape != (batch_size, 3):
                 raise ValueError(f"pose_jaw must be (B, 3), got {self.pose_jaw.shape}")
 
-            if self.left_eye_pose is not None and self.left_eye_pose.shape != (batch_size, 3):
-                raise ValueError(f"left_eye_pose must be (B, 3), got {self.left_eye_pose.shape}")
-            if self.right_eye_pose is not None and self.right_eye_pose.shape != (batch_size, 3):
-                raise ValueError(f"right_eye_pose must be (B, 3), got {self.right_eye_pose.shape}")
+            if self.left_eye_pose is not None and self.left_eye_pose.shape != (
+                batch_size,
+                3,
+            ):
+                raise ValueError(
+                    f"left_eye_pose must be (B, 3), got {self.left_eye_pose.shape}"
+                )
+            if self.right_eye_pose is not None and self.right_eye_pose.shape != (
+                batch_size,
+                3,
+            ):
+                raise ValueError(
+                    f"right_eye_pose must be (B, 3), got {self.right_eye_pose.shape}"
+                )
 
             # Validate expression shape if provided
             if self.expression is not None and num_expressions is not None:
@@ -258,7 +303,9 @@ class UnifiedSmplInputs:
             # hand_betas ignored in SMPL-X models
 
     @classmethod
-    def from_keypoint_pose(cls, kpts: PoseByKeypoints, *, model_type: ModelType | str) -> UnifiedSmplInputs:
+    def from_keypoint_pose(
+        cls, kpts: PoseByKeypoints, *, model_type: ModelType | str
+    ) -> UnifiedSmplInputs:
         """Convert a per-joint keypoint pose specification to segmented inputs.
 
         This method takes a `PoseByKeypoints` object, which allows specifying poses
@@ -306,11 +353,27 @@ class UnifiedSmplInputs:
 
         # Body pose: 21 joints in order
         body_joints = [
-            "left_hip", "right_hip", "spine1", "left_knee", "right_knee", "spine2",
-            "left_ankle", "right_ankle", "spine3", "left_foot", "right_foot",
-            "neck", "left_collar", "right_collar", "head",
-            "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-            "left_wrist", "right_wrist"
+            "left_hip",
+            "right_hip",
+            "spine1",
+            "left_knee",
+            "right_knee",
+            "spine2",
+            "left_ankle",
+            "right_ankle",
+            "spine3",
+            "left_foot",
+            "right_foot",
+            "neck",
+            "left_collar",
+            "right_collar",
+            "head",
+            "left_shoulder",
+            "right_shoulder",
+            "left_elbow",
+            "right_elbow",
+            "left_wrist",
+            "right_wrist",
         ]
 
         body_pose_parts = []
@@ -320,19 +383,39 @@ class UnifiedSmplInputs:
 
         # Hands
         left_hand_joints = [
-            "left_thumb1", "left_thumb2", "left_thumb3",
-            "left_index1", "left_index2", "left_index3",
-            "left_middle1", "left_middle2", "left_middle3",
-            "left_ring1", "left_ring2", "left_ring3",
-            "left_pinky1", "left_pinky2", "left_pinky3"
+            "left_thumb1",
+            "left_thumb2",
+            "left_thumb3",
+            "left_index1",
+            "left_index2",
+            "left_index3",
+            "left_middle1",
+            "left_middle2",
+            "left_middle3",
+            "left_ring1",
+            "left_ring2",
+            "left_ring3",
+            "left_pinky1",
+            "left_pinky2",
+            "left_pinky3",
         ]
 
         right_hand_joints = [
-            "right_thumb1", "right_thumb2", "right_thumb3",
-            "right_index1", "right_index2", "right_index3",
-            "right_middle1", "right_middle2", "right_middle3",
-            "right_ring1", "right_ring2", "right_ring3",
-            "right_pinky1", "right_pinky2", "right_pinky3"
+            "right_thumb1",
+            "right_thumb2",
+            "right_thumb3",
+            "right_index1",
+            "right_index2",
+            "right_index3",
+            "right_middle1",
+            "right_middle2",
+            "right_middle3",
+            "right_ring1",
+            "right_ring2",
+            "right_ring3",
+            "right_pinky1",
+            "right_pinky2",
+            "right_pinky3",
         ]
 
         # Only include hands if model supports them
@@ -366,7 +449,7 @@ class UnifiedSmplInputs:
             right_hand_pose=right_hand_pose,
             pose_jaw=pose_jaw,
             left_eye_pose=left_eye_pose,
-            right_eye_pose=right_eye_pose
+            right_eye_pose=right_eye_pose,
         )
 
     # ------------------------------------------------------------------
@@ -384,8 +467,12 @@ class UnifiedSmplInputs:
             left as 63-DoF (21x3). The wrapper pads to 69 as needed.
         """
         out: dict[str, Tensor | bool] = {
-            "global_orient": self.root_orient if self.root_orient is not None else torch.zeros((self.batch_size() or 1, 3)),
-            "body_pose": self.pose_body if self.pose_body is not None else torch.zeros((self.batch_size() or 1, 63)),
+            "global_orient": self.root_orient
+            if self.root_orient is not None
+            else torch.zeros((self.batch_size() or 1, 3)),
+            "body_pose": self.pose_body
+            if self.pose_body is not None
+            else torch.zeros((self.batch_size() or 1, 63)),
             "return_verts": True,
         }
         if self.betas is not None:
@@ -556,8 +643,12 @@ class PoseByKeypoints:
                 return value.shape[0]
         return None
 
-    def check_valid_by_keypoints(self, model_type: ModelType | str, strict: bool = False,
-                                  warn_fn: Callable[[str], None] | None = None) -> None:
+    def check_valid_by_keypoints(
+        self,
+        model_type: ModelType | str,
+        strict: bool = False,
+        warn_fn: Callable[[str], None] | None = None,
+    ) -> None:
         """Validate keypoint inputs against model capabilities.
 
         This method checks for common issues, such as providing hand joint data
@@ -597,8 +688,11 @@ class PoseByKeypoints:
             has_hands = any(
                 getattr(self, f.name, None) is not None
                 for f in fields(PoseByKeypoints)
-                if "thumb" in f.name or "index" in f.name or "middle" in f.name
-                or "ring" in f.name or "pinky" in f.name
+                if "thumb" in f.name
+                or "index" in f.name
+                or "middle" in f.name
+                or "ring" in f.name
+                or "pinky" in f.name
             )
             if has_hands:
                 msg = "SMPL does not support hand joints - they will be ignored"
@@ -606,7 +700,11 @@ class PoseByKeypoints:
                     raise ValueError(msg)
                 warn(msg)
 
-            if self.jaw is not None or self.left_eye is not None or self.right_eye is not None:
+            if (
+                self.jaw is not None
+                or self.left_eye is not None
+                or self.right_eye is not None
+            ):
                 msg = "SMPL does not support face joints - they will be ignored"
                 if strict:
                     raise ValueError(msg)
@@ -615,22 +713,46 @@ class PoseByKeypoints:
         elif model_type == "smplh":
             # Check for partial hand specification
             left_hand_joints = [
-                "left_thumb1", "left_thumb2", "left_thumb3",
-                "left_index1", "left_index2", "left_index3",
-                "left_middle1", "left_middle2", "left_middle3",
-                "left_ring1", "left_ring2", "left_ring3",
-                "left_pinky1", "left_pinky2", "left_pinky3"
+                "left_thumb1",
+                "left_thumb2",
+                "left_thumb3",
+                "left_index1",
+                "left_index2",
+                "left_index3",
+                "left_middle1",
+                "left_middle2",
+                "left_middle3",
+                "left_ring1",
+                "left_ring2",
+                "left_ring3",
+                "left_pinky1",
+                "left_pinky2",
+                "left_pinky3",
             ]
             right_hand_joints = [
-                "right_thumb1", "right_thumb2", "right_thumb3",
-                "right_index1", "right_index2", "right_index3",
-                "right_middle1", "right_middle2", "right_middle3",
-                "right_ring1", "right_ring2", "right_ring3",
-                "right_pinky1", "right_pinky2", "right_pinky3"
+                "right_thumb1",
+                "right_thumb2",
+                "right_thumb3",
+                "right_index1",
+                "right_index2",
+                "right_index3",
+                "right_middle1",
+                "right_middle2",
+                "right_middle3",
+                "right_ring1",
+                "right_ring2",
+                "right_ring3",
+                "right_pinky1",
+                "right_pinky2",
+                "right_pinky3",
             ]
 
-            left_provided = [j for j in left_hand_joints if getattr(self, j, None) is not None]
-            right_provided = [j for j in right_hand_joints if getattr(self, j, None) is not None]
+            left_provided = [
+                j for j in left_hand_joints if getattr(self, j, None) is not None
+            ]
+            right_provided = [
+                j for j in right_hand_joints if getattr(self, j, None) is not None
+            ]
 
             if left_provided and len(left_provided) < len(left_hand_joints):
                 msg = f"Partial left hand specification ({len(left_provided)}/15 joints) - missing joints will be zero-filled"
@@ -645,7 +767,11 @@ class PoseByKeypoints:
                 warn(msg)
 
             # SMPL-H: face not supported
-            if self.jaw is not None or self.left_eye is not None or self.right_eye is not None:
+            if (
+                self.jaw is not None
+                or self.left_eye is not None
+                or self.right_eye is not None
+            ):
                 msg = "SMPL-H does not support face joints - they will be ignored"
                 if strict:
                     raise ValueError(msg)
@@ -689,9 +815,9 @@ class UnifiedSmplOutput:
     """
 
     vertices: Tensor  # (B, V, 3) - mesh vertices
-    faces: Tensor     # (F, 3) - face connectivity
-    joints: Tensor    # (B, J, 3) - unified joint set
-    full_pose: Tensor # (B, P) - flattened pose used for LBS
+    faces: Tensor  # (F, 3) - face connectivity
+    joints: Tensor  # (B, J, 3) - unified joint set
+    full_pose: Tensor  # (B, P) - flattened pose used for LBS
     extras: dict[str, Any] = field(factory=dict)  # Model-specific extras
 
     @property

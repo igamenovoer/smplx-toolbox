@@ -151,7 +151,7 @@ class SMPLHModel:
     @property
     def num_joints(self) -> int:
         """Number of joints in the model.
-        
+
         SMPL-H typically has:
         - 22 body joints (SMPL body minus pelvis as it's root)
         - 30 hand joints (15 per hand from MANO)
@@ -195,7 +195,7 @@ class SMPLHModel:
     @property
     def joint_names(self) -> list[str]:
         """Names of all joints in hierarchical order.
-        
+
         Returns body joints followed by left hand joints, then right hand joints.
         """
         if self.m_joint_names is None:
@@ -357,7 +357,9 @@ class SMPLHModel:
         elif hand == "both":
             return left_hand_joints, right_hand_joints
         else:
-            raise ValueError(f"Invalid hand option: {hand}. Use 'left', 'right', or 'both'.")
+            raise ValueError(
+                f"Invalid hand option: {hand}. Use 'left', 'right', or 'both'."
+            )
 
     def to_mesh(
         self,

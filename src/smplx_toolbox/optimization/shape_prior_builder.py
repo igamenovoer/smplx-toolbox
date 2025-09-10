@@ -29,7 +29,11 @@ class ShapePriorLossBuilder(BaseLossBuilder):
         The loss reads ``betas`` from ``output.extras['betas']``. Ensure the
         forward pass propagated betas through the unified model.
         """
-        w = weight if isinstance(weight, torch.Tensor) else torch.tensor(weight, device=self.device, dtype=self.dtype)
+        w = (
+            weight
+            if isinstance(weight, torch.Tensor)
+            else torch.tensor(weight, device=self.device, dtype=self.dtype)
+        )
 
         class _BetasL2(nn.Module):
             def __init__(self, outer: ShapePriorLossBuilder, weight_in: Tensor) -> None:
@@ -40,9 +44,11 @@ class ShapePriorLossBuilder(BaseLossBuilder):
             def forward(self, output: UnifiedSmplOutput) -> Tensor:
                 betas = output.extras.get("betas", None)
                 if betas is None:
-                    raise ValueError("UnifiedSmplOutput.extras['betas'] not found; cannot apply shape prior")
+                    raise ValueError(
+                        "UnifiedSmplOutput.extras['betas'] not found; cannot apply shape prior"
+                    )
                 assert isinstance(betas, torch.Tensor)
                 b = betas.to(device=self.m_weight.device, dtype=self.m_weight.dtype)
-                return self.m_weight * (b ** 2).mean()
+                return self.m_weight * (b**2).mean()
 
         return _BetasL2(self, w)

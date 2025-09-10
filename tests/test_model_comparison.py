@@ -49,7 +49,7 @@ class SMPLModelComparator:
         self.m_model_data: dict[str, dict[str, Any]] | None = None
 
     @classmethod
-    def from_directory(cls, base_path: Path) -> 'SMPLModelComparator':
+    def from_directory(cls, base_path: Path) -> "SMPLModelComparator":
         """Create comparator from model directory."""
         instance = cls()
         instance.set_base_path(base_path)
@@ -75,13 +75,13 @@ class SMPLModelComparator:
     def base_path(self) -> Path:
         """Get the base path."""
         if self.m_base_path is None:
-            self.m_base_path = Path('data/body_models')
+            self.m_base_path = Path("data/body_models")
         return self.m_base_path
 
     def load_pickle_model(self, filepath: Path) -> dict[str, Any]:
         """Load a pickle model file."""
-        with open(filepath, 'rb') as f:
-            model_data = pickle.load(f, encoding='latin1')
+        with open(filepath, "rb") as f:
+            model_data = pickle.load(f, encoding="latin1")
         return model_data
 
     def load_npz_model(self, filepath: Path) -> dict[str, Any]:
@@ -96,8 +96,9 @@ class SMPLModelComparator:
                 model_data[key] = data
         return model_data
 
-    def extract_model_info(self, model_name: str, filepath: Path,
-                          model_data: dict[str, Any]) -> ModelInfo:
+    def extract_model_info(
+        self, model_name: str, filepath: Path, model_data: dict[str, Any]
+    ) -> ModelInfo:
         """Extract information from a model."""
         # Get file info
         file_format = filepath.suffix[1:]  # Remove the dot
@@ -105,38 +106,40 @@ class SMPLModelComparator:
 
         # Extract vertex count
         vertices = 0
-        if 'v_template' in model_data:
-            vertices = model_data['v_template'].shape[0]
+        if "v_template" in model_data:
+            vertices = model_data["v_template"].shape[0]
 
         # Extract face count
         faces = 0
-        if 'f' in model_data:
-            faces = model_data['f'].shape[0]
+        if "f" in model_data:
+            faces = model_data["f"].shape[0]
 
         # Extract joint count
         joints = 0
-        if 'J' in model_data:
-            joints = model_data['J'].shape[0]
-        elif 'J_regressor' in model_data:
-            joints = model_data['J_regressor'].shape[0]
-        elif 'kintree_table' in model_data:
-            joints = model_data['kintree_table'].shape[1]
+        if "J" in model_data:
+            joints = model_data["J"].shape[0]
+        elif "J_regressor" in model_data:
+            joints = model_data["J_regressor"].shape[0]
+        elif "kintree_table" in model_data:
+            joints = model_data["kintree_table"].shape[1]
 
         # Extract shape parameters
         shape_params = 0
-        if 'shapedirs' in model_data:
-            shape_params = model_data['shapedirs'].shape[-1]
+        if "shapedirs" in model_data:
+            shape_params = model_data["shapedirs"].shape[-1]
 
         # Extract pose parameters
         pose_params = 0
-        if 'posedirs' in model_data:
-            pose_params = model_data['posedirs'].shape[-1]
+        if "posedirs" in model_data:
+            pose_params = model_data["posedirs"].shape[-1]
 
         # Check for hands
-        has_hands = any('hand' in k.lower() for k in model_data)
+        has_hands = any("hand" in k.lower() for k in model_data)
 
         # Check for face (SMPLX specific)
-        has_face = any(k in model_data for k in ['lmk_faces_idx', 'dynamic_lmk_faces_idx'])
+        has_face = any(
+            k in model_data for k in ["lmk_faces_idx", "dynamic_lmk_faces_idx"]
+        )
 
         return ModelInfo(
             name=model_name,
@@ -149,32 +152,41 @@ class SMPLModelComparator:
             has_hands=has_hands,
             has_face=has_face,
             file_format=file_format,
-            file_size_mb=round(file_size_mb, 2)
+            file_size_mb=round(file_size_mb, 2),
         )
 
     def load_models(self) -> None:
         """Load all models for comparison."""
         models_to_load = [
-            ('MANO_Left', self.base_path / 'mano_v1_2/models/MANO_LEFT.pkl', 'pickle'),
-            ('MANO_Right', self.base_path / 'mano_v1_2/models/MANO_RIGHT.pkl', 'pickle'),
-            ('MANO_SMPLH', self.base_path / 'mano_v1_2/models/SMPLH_male.pkl', 'pickle'),
-            ('SMPLH_NPZ', self.base_path / 'smplh/male/model.npz', 'npz'),
-            ('SMPLH_PKL', self.base_path / 'smplh/SMPLH_MALE.pkl', 'pickle'),
-            ('SMPLX_NPZ', self.base_path / 'smplx/SMPLX_MALE.npz', 'npz'),
-            ('SMPLX_PKL', self.base_path / 'smplx/SMPLX_MALE.pkl', 'pickle'),
+            ("MANO_Left", self.base_path / "mano_v1_2/models/MANO_LEFT.pkl", "pickle"),
+            (
+                "MANO_Right",
+                self.base_path / "mano_v1_2/models/MANO_RIGHT.pkl",
+                "pickle",
+            ),
+            (
+                "MANO_SMPLH",
+                self.base_path / "mano_v1_2/models/SMPLH_male.pkl",
+                "pickle",
+            ),
+            ("SMPLH_NPZ", self.base_path / "smplh/male/model.npz", "npz"),
+            ("SMPLH_PKL", self.base_path / "smplh/SMPLH_MALE.pkl", "pickle"),
+            ("SMPLX_NPZ", self.base_path / "smplx/SMPLX_MALE.npz", "npz"),
+            ("SMPLX_PKL", self.base_path / "smplx/SMPLX_MALE.pkl", "pickle"),
         ]
 
         self.m_models = []
         self.m_model_data = {}
 
-        for model_name, filepath, file_type in track(models_to_load,
-                                                     description="Loading models..."):
+        for model_name, filepath, file_type in track(
+            models_to_load, description="Loading models..."
+        ):
             if not filepath.exists():
                 self.console.print(f"[yellow]Warning: {filepath} not found[/yellow]")
                 continue
 
             # Load model data
-            if file_type == 'pickle':
+            if file_type == "pickle":
                 model_data = self.load_pickle_model(filepath)
             else:
                 model_data = self.load_npz_model(filepath)
@@ -212,7 +224,7 @@ class SMPLModelComparator:
                 str(model.shape_params),
                 str(model.pose_params),
                 "✓" if model.has_hands else "✗",
-                "✓" if model.has_face else "✗"
+                "✓" if model.has_face else "✗",
             )
 
         return table
@@ -231,15 +243,21 @@ class SMPLModelComparator:
 
             # Check for important parameters
             params_to_check = [
-                'v_template', 'f', 'weights', 'shapedirs', 'posedirs',
-                'J', 'J_regressor', 'kintree_table'
+                "v_template",
+                "f",
+                "weights",
+                "shapedirs",
+                "posedirs",
+                "J",
+                "J_regressor",
+                "kintree_table",
             ]
 
             for param in params_to_check:
                 if param in model_data:
                     key_params.append(param)
                     data = model_data[param]
-                    if hasattr(data, 'shape'):
+                    if hasattr(data, "shape"):
                         dimensions.append(str(data.shape))
                     else:
                         dimensions.append(str(type(data).__name__))
@@ -306,11 +324,13 @@ class SMPLModelComparator:
         self.console.clear()
 
         # Header
-        self.console.print(Panel.fit(
-            "[bold magenta]SMPL Model Series Analysis[/bold magenta]\n"
-            "[dim]Comparing MANO, SMPLH, and SMPLX models[/dim]",
-            border_style="blue"
-        ))
+        self.console.print(
+            Panel.fit(
+                "[bold magenta]SMPL Model Series Analysis[/bold magenta]\n"
+                "[dim]Comparing MANO, SMPLH, and SMPLX models[/dim]",
+                border_style="blue",
+            )
+        )
 
         # Load models
         self.load_models()
@@ -324,10 +344,18 @@ class SMPLModelComparator:
         self.console.print()
 
         # Display evolution tree and summary side by side
-        self.console.print(Columns([
-            Panel(self.create_evolution_tree(), title="Evolution", border_style="blue"),
-            self.create_summary_panel()
-        ]))
+        self.console.print(
+            Columns(
+                [
+                    Panel(
+                        self.create_evolution_tree(),
+                        title="Evolution",
+                        border_style="blue",
+                    ),
+                    self.create_summary_panel(),
+                ]
+            )
+        )
 
     def run_tests(self) -> None:
         """Run comparison tests."""
@@ -341,30 +369,42 @@ class SMPLModelComparator:
         assert len(self.m_models) > 0, "No models loaded"
 
         # Check MANO models
-        mano_models = [m for m in self.m_models if 'MANO' in m.name and 'SMPLH' not in m.name]
+        mano_models = [
+            m for m in self.m_models if "MANO" in m.name and "SMPLH" not in m.name
+        ]
         for model in mano_models:
             assert model.vertices == 778, f"MANO {model.name} should have 778 vertices"
             assert model.joints == 16, f"MANO {model.name} should have 16 joints"
 
         # Check SMPLH models
-        smplh_models = [m for m in self.m_models if 'SMPLH' in m.name and 'MANO' not in m.name]
+        smplh_models = [
+            m for m in self.m_models if "SMPLH" in m.name and "MANO" not in m.name
+        ]
         for model in smplh_models:
-            assert model.vertices == 6890, f"SMPLH {model.name} should have 6890 vertices"
-            assert model.joints in [24, 52], f"SMPLH {model.name} should have 24 or 52 joints"
+            assert model.vertices == 6890, (
+                f"SMPLH {model.name} should have 6890 vertices"
+            )
+            assert model.joints in [24, 52], (
+                f"SMPLH {model.name} should have 24 or 52 joints"
+            )
 
         # Check SMPLX models
-        smplx_models = [m for m in self.m_models if 'SMPLX' in m.name]
+        smplx_models = [m for m in self.m_models if "SMPLX" in m.name]
         for model in smplx_models:
-            assert model.vertices == 10475, f"SMPLX {model.name} should have 10475 vertices"
+            assert model.vertices == 10475, (
+                f"SMPLX {model.name} should have 10475 vertices"
+            )
             assert model.joints == 55, f"SMPLX {model.name} should have 55 joints"
-            assert model.shape_params == 400, f"SMPLX {model.name} should have 400 shape params"
+            assert model.shape_params == 400, (
+                f"SMPLX {model.name} should have 400 shape params"
+            )
 
         self.console.print("[green]✓ All tests passed![/green]")
 
 
 def test_model_comparison() -> None:
     """Test function for pytest."""
-    comparator = SMPLModelComparator.from_directory(Path('data/body_models'))
+    comparator = SMPLModelComparator.from_directory(Path("data/body_models"))
     comparator.run_tests()
 
 
@@ -374,7 +414,7 @@ def main() -> None:
 
     try:
         # Create comparator
-        comparator = SMPLModelComparator.from_directory(Path('data/body_models'))
+        comparator = SMPLModelComparator.from_directory(Path("data/body_models"))
 
         # Display comparison
         comparator.display_comparison()

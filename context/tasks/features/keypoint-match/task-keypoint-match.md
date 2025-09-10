@@ -128,17 +128,13 @@ Projected Keypoint Matching (2D Data Term)
     - To optimize camera parameters, pass a camera module with trainable parameters (captured at init). The loss will propagate into the camera.
 
 Pose Prior – VPoser
-- `class VPoserPriorLossBuilder(BaseLossBuilder):`
-  - Purpose: Build priors using VPoser for the body pose (excluding hands/face).
-  - Initialization (required):
-    - `vposer: torch.nn.Module` compatible with `context/refcode/human_body_prior/src/human_body_prior/models/vposer_model.py`.
-      The builder stores this module and uses it internally; methods do not accept a separate `vposer` argument.
-  - Public builders:
-    - `from_latent(latent: Tensor, weight: float | Tensor = 1.0) -> SmplLossTerm`
-      - Penalize `||latent||^2` or configurable norm to keep body pose near prior; does not decode by default to reduce cost.
-    - `decoded_body_pose(weight: float|Tensor=1.0) -> SmplLossTerm`
-      - If user optimizes over decoded AA body pose directly (no latent), apply learned likelihood if available, otherwise L2 to mean.
-  - Notes: This stays separate from `KeypointMatchLossBuilder`; users can combine loss terms manually.
+- `class VPoserPriorLossBuilder(BaseLossBuilder)`
+  - Purpose: VPoser-based body pose priors (excluding hands/face).
+  - Single source of truth: see `context/tasks/features/keypoint-match/task-vposer-prior.md` for the complete interface and semantics.
+  - Interfaces (summarized; refer to the document above):
+    - `by_pose_latent(latent, weight)` → weighted L2 on latent.
+    - `by_pose(pose, w_pose_fit, w_latent_l2)` → self-reconstruction MSE + latent L2.
+  - Notes: Stays separate from keypoint data terms; users compose manually.
 
 Shape Prior
 - `class ShapePriorLossBuilder(BaseLossBuilder):`
@@ -210,7 +206,8 @@ Example Usage (illustrative, not executable here)
 - 2D fitting with camera and priors:
   - `proj = ProjectedKeypointMatchLossBuilder(model, camera)`
   - `data2d = proj.by_target_positions({"left_shoulder": L2D, "right_shoulder": R2D}, confidence={"left_shoulder": 1.0, "right_shoulder": 0.8})`
-  - `pose_prior = VPoserPriorLossBuilder(model, vposer).from_latent(latent, weight=1.0)`
+  - `vp = VPoserPriorLossBuilder.from_vposer(model, vposer)`
+  - `pose_prior = vp.by_pose_latent(latent, weight=1.0)`
   - `shape_prior = ShapePriorLossBuilder(model).l2_on_betas(0.001)`
   - `total = data2d(output) + pose_prior(output) + shape_prior(output)`
 - Packed full-skeleton by index (advanced, 3D):
@@ -218,7 +215,8 @@ Example Usage (illustrative, not executable here)
   - `w = torch.ones(J_raw); w[5] = 0.0`  # omit joint 5
   - `data_packed = km.by_target_positions_packed(targets3d, w)`
   - `total = data_packed(output)`
-  - `pose_prior = VPoserPriorLossBuilder(model).from_latent(latent, weight=1.0)`
+  - `vp = VPoserPriorLossBuilder.from_vposer(model, vposer)`
+  - `pose_prior = vp.by_pose_latent(latent, weight=1.0)`
   - `shape_prior = ShapePriorLossBuilder(model).l2_on_betas(0.001)`
   - `total = data2d(output) + pose_prior(output) + shape_prior(output)`
 

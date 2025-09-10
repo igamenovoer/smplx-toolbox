@@ -44,15 +44,35 @@ class AnglePriorLossBuilder(BaseLossBuilder):
             selected component. "sign" penalizes negative values (hyperextension)
             via ReLU.
         """
-        w = weight if isinstance(weight, torch.Tensor) else torch.tensor(weight, device=self.device, dtype=self.dtype)
+        w = (
+            weight
+            if isinstance(weight, torch.Tensor)
+            else torch.tensor(weight, device=self.device, dtype=self.dtype)
+        )
 
         # Body joint order used to build pose_body in containers
         body_joints = [
-            "left_hip", "right_hip", "spine1", "left_knee", "right_knee", "spine2",
-            "left_ankle", "right_ankle", "spine3", "left_foot", "right_foot",
-            "neck", "left_collar", "right_collar", "head",
-            "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-            "left_wrist", "right_wrist",
+            "left_hip",
+            "right_hip",
+            "spine1",
+            "left_knee",
+            "right_knee",
+            "spine2",
+            "left_ankle",
+            "right_ankle",
+            "spine3",
+            "left_foot",
+            "right_foot",
+            "neck",
+            "left_collar",
+            "right_collar",
+            "head",
+            "left_shoulder",
+            "right_shoulder",
+            "left_elbow",
+            "right_elbow",
+            "left_wrist",
+            "right_wrist",
         ]
 
         # Indices within body AA (63) for target joints
@@ -88,7 +108,7 @@ class AnglePriorLossBuilder(BaseLossBuilder):
                 if self.m_strategy == "sign":
                     # Penalize negative values (hyperextension)
                     penal = torch.relu(-vals)
-                    loss = (penal ** 2).mean()
+                    loss = (penal**2).mean()
                 elif self.m_strategy == "smplify":
                     # Quadratic penalty encouraging a modest positive bend
                     target = 0.2  # radians, mild flexion

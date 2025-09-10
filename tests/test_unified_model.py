@@ -52,7 +52,7 @@ class MockSMPLModel(nn.Module):
         batch_size = kwargs.get("betas", torch.zeros(1, 10)).shape[0]
 
         # Create mock output
-        output = type('Output', (), {})()
+        output = type("Output", (), {})()
         output.vertices = torch.randn(batch_size, self.num_verts, 3)
         output.joints = torch.randn(batch_size, self.num_joints, 3)
         output.full_pose = torch.zeros(batch_size, self.num_joints, 3, 3)
@@ -66,9 +66,9 @@ class MockSMPLModel(nn.Module):
 
 def test_unified_model_creation():
     """Test UnifiedSmplModel creation."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  Testing UnifiedSmplModel Creation")
-    print("="*60)
+    print("=" * 60)
 
     # Test with SMPL-X mock
     print("\n[TEST 1] Creating UnifiedSmplModel from SMPL-X...")
@@ -96,9 +96,9 @@ def test_unified_model_creation():
 
 def test_unified_model_forward():
     """Test UnifiedSmplModel forward pass."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  Testing UnifiedSmplModel Forward Pass")
-    print("="*60)
+    print("=" * 60)
 
     mock_model = MockSMPLModel("smplx")
     unified = UnifiedSmplModel.from_smpl_model(mock_model)
@@ -112,7 +112,9 @@ def test_unified_model_forward():
     )
 
     output = unified(inputs)
-    print(f"  [OK] Output shape: vertices={output.vertices.shape}, joints={output.joints.shape}")
+    print(
+        f"  [OK] Output shape: vertices={output.vertices.shape}, joints={output.joints.shape}"
+    )
     assert output.vertices.shape == (2, 10475, 3)
     assert output.joints.shape == (2, 55, 3)
 
@@ -127,7 +129,9 @@ def test_unified_model_forward():
     )
 
     output = unified(pose_input)
-    print(f"  [OK] Output shape: vertices={output.vertices.shape}, joints={output.joints.shape}")
+    print(
+        f"  [OK] Output shape: vertices={output.vertices.shape}, joints={output.joints.shape}"
+    )
     # Note: batch size inference may vary, just check shape dimensions
     assert output.vertices.ndim == 3
     assert output.joints.ndim == 3
@@ -137,9 +141,9 @@ def test_unified_model_forward():
 
 def test_unified_output():
     """Test UnifiedSmplOutput functionality."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("  Testing UnifiedSmplOutput")
-    print("="*60)
+    print("=" * 60)
 
     # Create mock output
     output = UnifiedSmplOutput(
@@ -173,21 +177,22 @@ def test_unified_output():
 
 
 if __name__ == "__main__":
-    print("="*60)
+    print("=" * 60)
     print("  UnifiedSmplModel Test Suite")
-    print("="*60)
+    print("=" * 60)
 
     try:
         test_unified_model_creation()
         test_unified_model_forward()
         test_unified_output()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("  ALL TESTS PASSED!")
-        print("="*60)
+        print("=" * 60)
 
     except Exception as e:
         print(f"\n[ERROR] Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         exit(1)
