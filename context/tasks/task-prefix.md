@@ -2,7 +2,7 @@
 
 ## Python Environment
 
-- we are using `pixi`, to run any pythong script, use `pixi run -e dev <your-script.py>`
+- IMPORTANT: we are using `pixi`, to run any pythong script, use `pixi run -e dev <your-script.py>`
   
 - If you want to run inline python code, use single-quotes in outer layer and double-quotes in inner layer, like this:
 
@@ -15,6 +15,20 @@ pixi run -e dev python -c 'print("Hello World")'
 ## Resource Locations
 
 you can find the resources in the following locations.
+
+#### SMPL series model files
+- SMPL: `data/body_models/smpl/SMPL_NEUTRAL.pkl`
+- SMPL-H: `data/body_models/smplh/SMPLH_MALE.pkl`
+- SMPL-H-mano: `data/body_models/mano_v1_2/models/SMPLH_male.pkl`
+- SMPL-H (NPZ variant): `data/body_models/smplh/male/model.npz`
+- SMPL-X (PKL): `data/body_models/smplx/SMPLX_MALE.pkl`
+- SMPL-X (NPZ): `data/body_models/smplx/SMPLX_MALE.npz`
+
+#### SMPL model relationships
+- overview: `context/hints/smplx-kb/compare-smpl-models.md`
+- skeleton: `context/hints/smplx-kb/compare-smpl-skeleton.md`
+- shapedirs: `context/hints/smplx-kb/compare-smpl-shape.md`
+- conversion: `context/hints/smplx-kb/about-smplx-transfer-model.md`
 
 ##### `context/refcode/` (Detailed Breakdown)
 Reference code repository containing three major SMPL-X related implementations:

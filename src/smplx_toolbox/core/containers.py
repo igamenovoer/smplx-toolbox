@@ -149,7 +149,7 @@ class UnifiedSmplInputs:
                 return value.shape[0]
         return None
 
-    def check_valid(self, model_type: ModelType, *, num_betas: int | None = None, 
+    def check_valid(self, model_type: ModelType | str, *, num_betas: int | None = None, 
                     num_expressions: int | None = None) -> None:
         """Verify that tensor presence and shapes are consistent with the model type.
 
@@ -258,7 +258,7 @@ class UnifiedSmplInputs:
             # hand_betas ignored in SMPL-X models
 
     @classmethod
-    def from_keypoint_pose(cls, kpts: PoseByKeypoints, *, model_type: ModelType) -> UnifiedSmplInputs:
+    def from_keypoint_pose(cls, kpts: PoseByKeypoints, *, model_type: ModelType | str) -> UnifiedSmplInputs:
         """Convert a per-joint keypoint pose specification to segmented inputs.
 
         This method takes a `PoseByKeypoints` object, which allows specifying poses
@@ -556,7 +556,7 @@ class PoseByKeypoints:
                 return value.shape[0]
         return None
 
-    def check_valid_by_keypoints(self, model_type: ModelType, strict: bool = False, 
+    def check_valid_by_keypoints(self, model_type: ModelType | str, strict: bool = False, 
                                   warn_fn: Callable[[str], None] | None = None) -> None:
         """Validate keypoint inputs against model capabilities.
 

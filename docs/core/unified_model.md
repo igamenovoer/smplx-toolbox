@@ -28,11 +28,3 @@ print(out.vertices.shape, out.joints.shape, umodel.model_type)
 
 ::: smplx_toolbox.core.unified_model.UnifiedSmplModel
 
-Related containers used by the unified model:
-
-::: smplx_toolbox.core.containers.UnifiedSmplInputs
-
-::: smplx_toolbox.core.containers.PoseByKeypoints
-
-::: smplx_toolbox.core.containers.UnifiedSmplOutput
-

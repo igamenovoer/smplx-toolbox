@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import torch
@@ -71,20 +71,18 @@ from torch import Tensor
 
 # Import from our sub-modules
 from .constants import (
-    SMPL_JOINT_NAMES,
-    SMPLH_JOINT_NAMES,
-    SMPLX_JOINT_NAMES,
     DeviceLike,
     ModelType,
+    MissingJointFill,
     T,
+    get_smpl_joint_names,
+    get_smplh_joint_names,
+    get_smplx_joint_names,
 )
 from .containers import PoseByKeypoints, UnifiedSmplInputs, UnifiedSmplOutput
 
 __all__ = [
-    "UnifiedSmplModel",
-    "UnifiedSmplInputs",
-    "PoseByKeypoints",
-    "UnifiedSmplOutput"
+    "UnifiedSmplModel"
 ]
 
 
@@ -101,16 +99,9 @@ class UnifiedSmplModel:
         - Unification of joint sets to the 55-joint SMPL-X scheme.
         - Support for user-friendly per-keypoint pose specification via `PoseByKeypoints`.
 
-    Parameters
-    ----------
-    deformable_model : torch.nn.Module
-        An instance of a pre-loaded SMPL-family model from `smplx.create`.
-    missing_joint_fill : {'nan', 'zero'}, optional
-        How to fill joint positions that are present in the unified joint set but
-        not in the base model's output. Defaults to 'nan'.
-    warn_fn : Callable[[str], None], optional
-        A custom function to handle warnings, e.g., for logging. Defaults to
-        `warnings.warn`.
+    Note
+    ----
+    Use the `from_smpl_model` classmethod to create configured instances.
     """
 
     def __init__(self) -> None:
@@ -119,7 +110,7 @@ class UnifiedSmplModel:
         Use the `from_smpl_model` classmethod to create a configured instance.
         """
         self.m_deformable_model: nn.Module | None = None
-        self.m_missing_joint_fill: str | None = None
+        self.m_missing_joint_fill: MissingJointFill | None = None
         self.m_warn_fn: Callable[[str], None] | None = None
         # Optional auxiliary mapping tensors (lazy initialized)
         self.m_joint_mapping: dict[int, int] | None = None
@@ -129,7 +120,7 @@ class UnifiedSmplModel:
         cls: type[T],
         deformable_model: nn.Module,
         *,
-        missing_joint_fill: Literal["nan", "zero"] = "nan",
+        missing_joint_fill: MissingJointFill | str = MissingJointFill.NAN,
         warn_fn: Callable[[str], None] | None = None
     ) -> T:
         """Create a unified model wrapper from an existing SMPL-family model instance.
@@ -151,7 +142,18 @@ class UnifiedSmplModel:
         """
         instance = cls()
         instance.m_deformable_model = deformable_model
-        instance.m_missing_joint_fill = missing_joint_fill
+        # Normalize missing joint fill strategy to enum
+        if isinstance(missing_joint_fill, MissingJointFill):
+            instance.m_missing_joint_fill = missing_joint_fill
+        else:
+            # Accept string values for backward compatibility
+            try:
+                instance.m_missing_joint_fill = MissingJointFill(missing_joint_fill)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid missing_joint_fill: {missing_joint_fill}. "
+                    f"Expected one of: {MissingJointFill.values()}"
+                )
         instance.m_warn_fn = warn_fn or warnings.warn
 
         return instance
@@ -165,16 +167,16 @@ class UnifiedSmplModel:
         type_name = type(model).__name__.lower()
 
         # Try type name first
-        if type_name in ["smpl", "smplh", "smplx"]:
-            return type_name  # type: ignore
+        if type_name in ModelType.values():
+            return ModelType(type_name)
 
         # Heuristics based on attributes
         if hasattr(model, "jaw_pose") or hasattr(model, "leye_pose") or hasattr(model, "reye_pose"):
-            return "smplx"
+            return ModelType.SMPLX
         elif hasattr(model, "left_hand_pose") and hasattr(model, "right_hand_pose"):
-            return "smplh"
+            return ModelType.SMPLH
         else:
-            return "smpl"
+            return ModelType.SMPL
 
     @property
     def model_type(self) -> ModelType:
@@ -182,8 +184,8 @@ class UnifiedSmplModel:
 
         Returns
         -------
-        str
-            The model type, one of 'smpl', 'smplh', or 'smplx'.
+        ModelType
+            The model type value (stringy enum: compares equal to 'smpl'/'smplh'/'smplx').
         """
         return self._detect_model_type()
 
@@ -439,7 +441,7 @@ class UnifiedSmplModel:
 
         return normalized  # type: ignore[return-value]
 
-    def _unify_joints(self, joints_raw: Tensor, model_type: str) -> tuple[Tensor, dict[str, Any]]:
+    def _unify_joints(self, joints_raw: Tensor, model_type: ModelType | str) -> tuple[Tensor, dict[str, Any]]:
         """Convert raw model joints to the unified 55-joint SMPL-X set.
 
         This method maps the joint output from any SMPL-family model to the
@@ -493,7 +495,7 @@ class UnifiedSmplModel:
                 extras["joint_mapping"][22 + i] = 25 + i
 
             # Fill missing face joints (indices 22, 23, 24: jaw, left_eye_smplhf, right_eye_smplhf)
-            if self.m_missing_joint_fill == "nan":
+            if self.m_missing_joint_fill == MissingJointFill.NAN:
                 joints_unified[:, 22:25] = float("nan")
             # else: already zeros
 
@@ -504,8 +506,8 @@ class UnifiedSmplModel:
             joints_unified = torch.zeros((batch_size, 55, 3), device=device, dtype=dtype)
             
             # Create name-based mapping
-            raw_names = SMPL_JOINT_NAMES[:joints_raw.shape[1]]
-            unified_names = SMPLX_JOINT_NAMES[:55]
+            raw_names = get_smpl_joint_names()[:joints_raw.shape[1]]
+            unified_names = get_smplx_joint_names()[:55]
             
             for raw_idx, raw_name in enumerate(raw_names):
                 # Find corresponding unified index
@@ -521,7 +523,7 @@ class UnifiedSmplModel:
                     missing.append(i)
                     
             # Fill missing joints
-            if self.m_missing_joint_fill == "nan":
+            if self.m_missing_joint_fill == MissingJointFill.NAN:
                 for idx in missing:
                     joints_unified[:, idx] = float("nan")
             # else: already zeros
@@ -541,11 +543,11 @@ class UnifiedSmplModel:
         # Use default names based on model type
         model_type = self.model_type
         if model_type == "smplx":
-            return SMPLX_JOINT_NAMES
+            return get_smplx_joint_names()
         elif model_type == "smplh":
-            return SMPLH_JOINT_NAMES
+            return get_smplh_joint_names()
         elif model_type == "smpl":
-            return SMPL_JOINT_NAMES
+            return get_smpl_joint_names()
         
         return None
 
@@ -744,7 +746,7 @@ class UnifiedSmplModel:
         """
         if unified:
             # Return the first 55 official SMPL-X joint names
-            return SMPLX_JOINT_NAMES[:55]
+            return get_smplx_joint_names()[:55]
         else:
             # Return model-specific names if available
             names = self._get_raw_joint_names()

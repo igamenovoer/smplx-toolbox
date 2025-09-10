@@ -5,6 +5,9 @@ site_url: https://yourusername.github.io/smplx-toolbox
 repo_url: https://github.com/yourusername/smplx-toolbox
 repo_name: yourusername/smplx-toolbox
 
+# Development server configuration
+dev_addr: 0.0.0.0:9100
+
 theme:
   name: material
   features:

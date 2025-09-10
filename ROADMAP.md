@@ -18,13 +18,20 @@ To become the go-to toolkit for researchers, developers, and artists working wit
 
 **Iterative Development:** The library is developed in an iterative manner, with each round touching on all aspects of the functional requirements. This approach ensures that the library is continuously improving and that new features are added in a structured and organized way.
 
+## Currently Working
+
+**Keypoint-Based Fitting Implementation (In Progress)**
+- Implementing unified keypoint-based fitting system for all SMPL model variants (SMPL, SMPL-H, SMPL-X)
+- Developing optimization framework for fitting model parameters to 2D/3D keypoint data
+- Creating consistent API for pose estimation and body shape inference across model types
+
 ## Development Timeline
 
 ### Round 1: Core Functionality
 
-- [ ] **Model Loading and Conversion:**
-  - [ ] Load SMPL-X and SMPL-H models.
-  - [ ] Convert models to Trimesh format for visualization and processing.
+- [x] **Model Loading and Conversion:**
+  - [x] Load SMPL-X and SMPL-H models.
+  - [x] Convert models to Trimesh format for visualization and processing.
 - [ ] **Text2Motion Conversion:**
   - [ ] Convert text2motion skeletons to SMPL-H models.
 - [ ] **Visualization:**
@@ -35,7 +42,7 @@ To become the go-to toolkit for researchers, developers, and artists working wit
 - [ ] **Model Conversion:**
   - [ ] Convert SMPL-H models to SMPL-X for both static and animated models.
 - [ ] **Keypoint Fitting:**
-  - [ ] Develop keypoint fitting for SMPL-H and SMPL-X optimization.
+  - [ ] Develop keypoint fitting for all SMPL model variants (SMPL, SMPL-H, SMPL-X) optimization.
 - [ ] **Animation:**
   - [ ] Define animation format for SMPL-H and SMPL-X.
   - [ ] Convert animation to and from BVH format.
