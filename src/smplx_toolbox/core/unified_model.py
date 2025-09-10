@@ -682,6 +682,11 @@ class UnifiedSmplModel:
         # Add any extra outputs
         if hasattr(output, "v_shaped"):
             extras["v_shaped"] = output.v_shaped
+        # Expose input betas in extras for priors/losses
+        if "betas" in normalized:
+            betas_val = normalized["betas"]
+            if isinstance(betas_val, torch.Tensor):
+                extras["betas"] = betas_val
 
         return UnifiedSmplOutput(
             vertices=vertices,

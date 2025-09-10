@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -58,10 +57,10 @@ class GMoF(nn.Module):
         torch.Tensor
             Robustified penalty with the same shape as ``residual``.
         """
-        squared_res = residual ** 2
-        denom = squared_res + (self.rho ** 2)
+        squared_res = residual**2
+        denom = squared_res + (self.rho**2)
         dist = squared_res / denom
-        return (self.rho ** 2) * dist
+        return (self.rho**2) * dist
 
 
 def gmof(residual: Tensor, rho: float = 1.0) -> Tensor:
