@@ -172,6 +172,36 @@ Error Handling & Edge Cases
 - Device/Dtype: targets and weights are moved to model’s device/dtype at build time; rechecked at `forward` if needed.
 - Packed API validation: error if `target_positions.shape[1] != J_raw` for the current model type.
 
+Robust Loss Options (PyTorch)
+- Built-in robust losses we can leverage instead of custom implementations:
+  - `torch.nn.SmoothL1Loss` / `torch.nn.functional.smooth_l1_loss` (aka “Huber” style prior to dedicated class).
+  - `torch.nn.HuberLoss` / `torch.nn.functional.huber_loss` (explicit Huber loss; configurable `delta` parameter).
+- Mapping from our `robust` argument:
+  - `"l2"` → `torch.nn.MSELoss` or `(residual**2)`.
+  - `"huber"` → `torch.nn.HuberLoss(delta=rho)` or `F.huber_loss(..., delta=rho)` where `rho` matches the transition point.
+  - `"gmof"` (Geman–McClure/GMoF) → not in PyTorch core; we will provide a small internal implementation (mirroring SMPLify-X’s `GMoF`), parameterized by `rho`.
+- Docs (PyTorch stable):
+  - HuberLoss: https://pytorch.org/docs/stable/generated/torch.nn.HuberLoss.html
+  - SmoothL1Loss: https://pytorch.org/docs/stable/generated/torch.nn.SmoothL1Loss.html
+
+Example usage inside a term
+```python
+import torch.nn.functional as F
+
+def robustify(residual, kind: str, rho: float):
+    if kind == "l2":
+        return (residual ** 2)
+    elif kind == "huber":
+        # reduction handled later; return elementwise
+        return F.huber_loss(residual, torch.zeros_like(residual), delta=rho, reduction="none")
+    elif kind == "gmof":
+        # Geman–McClure: r^2 / (r^2 + rho^2)
+        r2 = (residual ** 2)
+        return r2 / (r2 + (rho ** 2))
+    else:
+        raise ValueError(f"Unknown robust kind: {kind}")
+```
+
 Example Usage (illustrative, not executable here)
 - 3D keypoint fit data term only:
   - `km = KeypointMatchLossBuilder(model)`
