@@ -308,149 +308,45 @@ class UnifiedSmplInputs:
     ) -> UnifiedSmplInputs:
         """Convert a per-joint keypoint pose specification to segmented inputs.
 
-        This method takes a `PoseByKeypoints` object, which allows specifying poses
-        for individual joints by name, and converts it into the standard segmented
-        `UnifiedSmplInputs` format required by the model.
-
-        Parameters
-        ----------
-        kpts : PoseByKeypoints
-            A `PoseByKeypoints` object containing the per-joint pose specifications.
-        model_type : ModelType
-            The target model type ('smpl', 'smplh', 'smplx') for which to
-            generate the inputs. This determines which pose segments (e.g., hands, face)
-            are created.
-
-        Returns
-        -------
-        UnifiedSmplInputs
-            An instance with the appropriate pose segments filled from the keypoint data.
+        Uses PoseByKeypoints packed converters to reduce duplication, then
+        slices the resulting pose vector into UnifiedSmplInputs segments.
         """
-        batch_size = kpts.batch_size()
-        if batch_size is None:
-            batch_size = 1
-
-        device = None
-        dtype = torch.float32
-
-        # Find device and dtype from first non-None tensor
-        for f in fields(PoseByKeypoints):
-            value = getattr(kpts, f.name)
-            if value is not None and isinstance(value, Tensor):
-                device = value.device
-                dtype = value.dtype
-                break
-
-        def get_or_zeros(field_name: str) -> Tensor:
-            """Get field value or return zeros."""
-            value = getattr(kpts, field_name, None)
-            if value is not None:
-                return value
-            return torch.zeros((batch_size, 3), device=device, dtype=dtype)
-
-        # Root orientation
-        root_orient = getattr(kpts, "root", None)
-
-        # Body pose: 21 joints in order
-        body_joints = [
-            "left_hip",
-            "right_hip",
-            "spine1",
-            "left_knee",
-            "right_knee",
-            "spine2",
-            "left_ankle",
-            "right_ankle",
-            "spine3",
-            "left_foot",
-            "right_foot",
-            "neck",
-            "left_collar",
-            "right_collar",
-            "head",
-            "left_shoulder",
-            "right_shoulder",
-            "left_elbow",
-            "right_elbow",
-            "left_wrist",
-            "right_wrist",
-        ]
-
-        body_pose_parts = []
-        for joint in body_joints:
-            body_pose_parts.append(get_or_zeros(joint))
-        pose_body = torch.cat(body_pose_parts, dim=-1)  # (B, 63)
-
-        # Hands
-        left_hand_joints = [
-            "left_thumb1",
-            "left_thumb2",
-            "left_thumb3",
-            "left_index1",
-            "left_index2",
-            "left_index3",
-            "left_middle1",
-            "left_middle2",
-            "left_middle3",
-            "left_ring1",
-            "left_ring2",
-            "left_ring3",
-            "left_pinky1",
-            "left_pinky2",
-            "left_pinky3",
-        ]
-
-        right_hand_joints = [
-            "right_thumb1",
-            "right_thumb2",
-            "right_thumb3",
-            "right_index1",
-            "right_index2",
-            "right_index3",
-            "right_middle1",
-            "right_middle2",
-            "right_middle3",
-            "right_ring1",
-            "right_ring2",
-            "right_ring3",
-            "right_pinky1",
-            "right_pinky2",
-            "right_pinky3",
-        ]
-
-        # Only include hands if model supports them
-        left_hand_pose = None
-        right_hand_pose = None
-        if model_type in ["smplh", "smplx"]:
-            left_parts = [get_or_zeros(j) for j in left_hand_joints]
-            right_parts = [get_or_zeros(j) for j in right_hand_joints]
-            left_hand_pose = torch.cat(left_parts, dim=-1)  # (B, 45)
-            right_hand_pose = torch.cat(right_parts, dim=-1)  # (B, 45)
-
-        # Face/eyes (SMPL-X only)
-        pose_jaw = None
-        left_eye_pose = None
-        right_eye_pose = None
-        if model_type == "smplx":
-            pose_jaw = getattr(kpts, "jaw", None)
-            # Handle eye aliases
-            left_eye_pose = getattr(kpts, "left_eye", None)
-            if left_eye_pose is None:
-                left_eye_pose = getattr(kpts, "left_eyeball", None)
-
-            right_eye_pose = getattr(kpts, "right_eye", None)
-            if right_eye_pose is None:
-                right_eye_pose = getattr(kpts, "right_eyeball", None)
-
-        return cls(
-            root_orient=root_orient,
-            pose_body=pose_body,
-            left_hand_pose=left_hand_pose,
-            right_hand_pose=right_hand_pose,
-            pose_jaw=pose_jaw,
-            left_eye_pose=left_eye_pose,
-            right_eye_pose=right_eye_pose,
-        )
+        mt = str(model_type)
+        if mt == "smpl":
+            packed = kpts.to_smpl_pose()  # (B, 66)
+            root_orient = packed[:, 0:3]
+            pose_body = packed[:, 3:66]
+            return cls(root_orient=root_orient, pose_body=pose_body)
+        elif mt == "smplh":
+            packed = kpts.to_smplh_pose()  # (B, 156)
+            root_orient = packed[:, 0:3]
+            pose_body = packed[:, 3:66]
+            left_hand_pose = packed[:, 66:111]
+            right_hand_pose = packed[:, 111:156]
+            return cls(
+                root_orient=root_orient,
+                pose_body=pose_body,
+                left_hand_pose=left_hand_pose,
+                right_hand_pose=right_hand_pose,
+            )
+        else:  # smplx
+            packed = kpts.to_smplx_pose()  # (B, 165)
+            root_orient = packed[:, 0:3]
+            pose_body = packed[:, 3:66]
+            pose_jaw = packed[:, 66:69]
+            left_eye_pose = packed[:, 69:72]
+            right_eye_pose = packed[:, 72:75]
+            left_hand_pose = packed[:, 75:120]
+            right_hand_pose = packed[:, 120:165]
+            return cls(
+                root_orient=root_orient,
+                pose_body=pose_body,
+                left_hand_pose=left_hand_pose,
+                right_hand_pose=right_hand_pose,
+                pose_jaw=pose_jaw,
+                left_eye_pose=left_eye_pose,
+                right_eye_pose=right_eye_pose,
+            )
 
     # ------------------------------------------------------------------
     # Conversion methods (produce per-family input dicts in AA space)
@@ -628,6 +524,133 @@ class PoseByKeypoints:
             An instance of the class.
         """
         return cls(**kwargs)
+
+    # ---------------------------
+    # Packed pose conversions
+    # ---------------------------
+    def _infer_batch_device_dtype(self) -> tuple[int, torch.device | None, torch.dtype]:
+        bsz = self.batch_size()
+        if bsz is None:
+            bsz = 1
+        device: torch.device | None = None
+        dtype: torch.dtype = torch.float32
+        for f in fields(PoseByKeypoints):
+            value = getattr(self, f.name)
+            if isinstance(value, torch.Tensor):
+                device = value.device
+                dtype = value.dtype
+                break
+        return bsz, device, dtype
+
+    def _stack_or_zero(self, names: list[str]) -> Tensor:
+        bsz, device, dtype = self._infer_batch_device_dtype()
+        parts = []
+        for nm in names:
+            val = getattr(self, nm, None)
+            if isinstance(val, torch.Tensor):
+                parts.append(val)
+            else:
+                parts.append(torch.zeros((bsz, 3), device=device, dtype=dtype))
+        return torch.cat(parts, dim=-1) if parts else torch.zeros((bsz, 0), device=device, dtype=dtype)
+
+    def to_smpl_pose(self) -> Tensor:
+        """Convert named joints to a packed SMPL pose vector (B, 66).
+
+        Order: root(3) + 21 body joints (63). Unspecified joints are zero-filled.
+        """
+        body_joints = [
+            "left_hip",
+            "right_hip",
+            "spine1",
+            "left_knee",
+            "right_knee",
+            "spine2",
+            "left_ankle",
+            "right_ankle",
+            "spine3",
+            "left_foot",
+            "right_foot",
+            "neck",
+            "left_collar",
+            "right_collar",
+            "head",
+            "left_shoulder",
+            "right_shoulder",
+            "left_elbow",
+            "right_elbow",
+            "left_wrist",
+            "right_wrist",
+        ]
+        bsz, device, dtype = self._infer_batch_device_dtype()
+        root = self.root if isinstance(self.root, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype)
+        body = self._stack_or_zero(body_joints)
+        return torch.cat([root, body], dim=-1)
+
+    def to_smplh_pose(self) -> Tensor:
+        """Convert named joints to a packed SMPL-H pose vector (B, 156).
+
+        Order: root(3) + body(63) + left hand 15 joints (45) + right hand 15 joints (45).
+        Unspecified joints are zero-filled.
+        """
+        left_hand_joints = [
+            "left_thumb1",
+            "left_thumb2",
+            "left_thumb3",
+            "left_index1",
+            "left_index2",
+            "left_index3",
+            "left_middle1",
+            "left_middle2",
+            "left_middle3",
+            "left_ring1",
+            "left_ring2",
+            "left_ring3",
+            "left_pinky1",
+            "left_pinky2",
+            "left_pinky3",
+        ]
+        right_hand_joints = [
+            "right_thumb1",
+            "right_thumb2",
+            "right_thumb3",
+            "right_index1",
+            "right_index2",
+            "right_index3",
+            "right_middle1",
+            "right_middle2",
+            "right_middle3",
+            "right_ring1",
+            "right_ring2",
+            "right_ring3",
+            "right_pinky1",
+            "right_pinky2",
+            "right_pinky3",
+        ]
+        smpl = self.to_smpl_pose()
+        left = self._stack_or_zero(left_hand_joints)
+        right = self._stack_or_zero(right_hand_joints)
+        return torch.cat([smpl, left, right], dim=-1)
+
+    def to_smplx_pose(self) -> Tensor:
+        """Convert named joints to a packed SMPL-X pose vector (B, 165).
+
+        Order: root(3) + body(63) + jaw(3) + left_eye(3) + right_eye(3) + left hand(45) + right hand(45).
+        Unspecified joints are zero-filled. Eye aliases (left_eyeball/right_eyeball) are honored.
+        """
+        smplh = self.to_smplh_pose()
+        bsz, device, dtype = self._infer_batch_device_dtype()
+        jaw = self.jaw if isinstance(self.jaw, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype)
+        left_eye = (
+            self.left_eye
+            if isinstance(self.left_eye, torch.Tensor)
+            else (self.left_eyeball if isinstance(self.left_eyeball, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype))
+        )
+        right_eye = (
+            self.right_eye
+            if isinstance(self.right_eye, torch.Tensor)
+            else (self.right_eyeball if isinstance(self.right_eyeball, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype))
+        )
+        return torch.cat([smplh[:, :66], jaw, left_eye, right_eye, smplh[:, 66:]], dim=-1)
 
     def batch_size(self) -> int | None:
         """Infer the batch size from the first non-None tensor attribute.
