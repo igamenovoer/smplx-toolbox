@@ -150,3 +150,9 @@ Reference: `context/hints/smplx-kb/compare-smpl-models.md`, `compare-smpl-skelet
 - Models and relationships: `context/hints/smplx-kb/compare-smpl-models.md`, `compare-smpl-skeleton.md`, `compare-smpl-shape.md`.
 - Transfer pipeline: `context/hints/smplx-kb/about-smplx-transfer-model.md`.
 - Current implementation: `src/smplx_toolbox/core/unified_model.py` and `containers.py`.
+## Note: PoseByKeypoints Status (Outdated)
+
+- PoseByKeypoints is no longer part of the public API. Code now accepts `UnifiedSmplInputs` only.
+- For optional editing/inspection of packed poses, use `NamedPose` with `ModelType`.
+- Joint name→index mappings are sourced from `core.constants` and follow the unified SMPL‑X 55‑joint scheme.
+- This design doc is retained for archival purposes; references to PoseByKeypoints reflect an older iteration.

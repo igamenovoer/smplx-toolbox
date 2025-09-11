@@ -7,7 +7,7 @@ and retrieving outputs.
 Key Components:
     - UnifiedSmplModel: Main adapter class wrapping smplx models.
     - UnifiedSmplInputs: Standardized input container.
-    - PoseByKeypoints: User-friendly per-joint pose specification.
+    - NamedPose: Utility for inspecting/editing packed poses by joint name.
     - UnifiedSmplOutput: Standardized output container.
 
 Usage Pattern
@@ -16,7 +16,7 @@ Usage Pattern
 
     import torch
     import smplx
-    from smplx_toolbox.core.unified_model import UnifiedSmplModel, PoseByKeypoints
+    from smplx_toolbox.core.unified_model import UnifiedSmplModel
 
     # 1. Load a base SMPL-family model (e.g., SMPL-X)
     base_smplx_model = smplx.create(
@@ -30,18 +30,14 @@ Usage Pattern
     # 2. Wrap it with the UnifiedSmplModel
     model = UnifiedSmplModel.from_smpl_model(base_smplx_model)
 
-    # 3. Define a pose using the user-friendly PoseByKeypoints class
-    #    (all poses are in axis-angle format)
-    keypoint_pose = PoseByKeypoints(
-        left_shoulder=torch.tensor([[0.0, 0.0, -1.5]]),  # Raise left arm
-        right_shoulder=torch.tensor([[0.0, 0.0, 1.5]]),   # Raise right arm
-        jaw=torch.tensor([[0.2, 0.0, 0.0]])             # Open jaw (SMPL-X only)
+    # 3. Create segmented inputs (axis-angle)
+    inputs = UnifiedSmplInputs(
+        root_orient=torch.zeros(1, 3),
+        pose_body=torch.zeros(1, 63),
     )
 
     # 4. Run the forward pass
-    #    The wrapper automatically converts keypoint poses to the format
-    #    expected by the base model.
-    output = model(keypoint_pose)
+    output = model(inputs)
 
     # 5. Access unified outputs
     print(f"Model type: {model.model_type}")
@@ -79,7 +75,7 @@ from .constants import (
     get_smplh_joint_names,
     get_smplx_joint_names,
 )
-from .containers import PoseByKeypoints, UnifiedSmplInputs, UnifiedSmplOutput
+from .containers import NamedPose, UnifiedSmplInputs, UnifiedSmplOutput
 
 __all__ = ["UnifiedSmplModel"]
 
@@ -95,7 +91,7 @@ class UnifiedSmplModel:
         - Auto-detection of model type from the provided `smplx` model instance.
         - Normalized inputs and outputs across model variants.
         - Unification of joint sets to the 55-joint SMPL-X scheme.
-        - Support for user-friendly per-keypoint pose specification via `PoseByKeypoints`.
+        - Utility `NamedPose` for optional packed pose inspection/editing.
 
     Note
     ----
@@ -290,19 +286,17 @@ class UnifiedSmplModel:
             return faces
         raise AttributeError("Model has no faces")
 
-    def _normalize_inputs(
-        self, inputs: UnifiedSmplInputs | PoseByKeypoints
-    ) -> dict[str, Tensor]:
+    def _normalize_inputs(self, inputs: UnifiedSmplInputs) -> dict[str, Tensor]:
         """Normalize and prepare inputs for the wrapped `smplx` model.
 
-        This method handles the conversion from `UnifiedSmplInputs` or
-        `PoseByKeypoints` to the dictionary of keyword arguments expected by
+        This method handles the conversion from `UnifiedSmplInputs` to the
+        dictionary of keyword arguments expected by
         the underlying `smplx` model's forward pass. It ensures all required
         tensors are present, correctly shaped, and on the correct device.
 
         Parameters
         ----------
-        inputs : UnifiedSmplInputs or PoseByKeypoints
+        inputs : UnifiedSmplInputs
             The high-level input specification.
 
         Returns
@@ -312,13 +306,6 @@ class UnifiedSmplModel:
             the `smplx` model.
         """
         model_type = self.model_type
-
-        # Convert keypoints if needed
-        if isinstance(inputs, PoseByKeypoints):
-            inputs.check_valid_by_keypoints(
-                model_type, strict=False, warn_fn=self.m_warn_fn
-            )
-            inputs = UnifiedSmplInputs.from_keypoint_pose(inputs, model_type=model_type)
 
         # Validate inputs (beta/expr count adapted later)
         inputs.check_valid(
@@ -678,22 +665,20 @@ class UnifiedSmplModel:
                 batch_size = normalized_inputs["global_orient"].shape[0]
             return torch.zeros((batch_size, 3), device=self.device, dtype=self.dtype)
 
-    def __call__(
-        self, inputs: UnifiedSmplInputs | PoseByKeypoints
-    ) -> UnifiedSmplOutput:
+    def __call__(self, inputs: UnifiedSmplInputs) -> UnifiedSmplOutput:
         """Forward pass through the model. See `forward` for details."""
         return self.forward(inputs)
 
-    def forward(self, inputs: UnifiedSmplInputs | PoseByKeypoints) -> UnifiedSmplOutput:
+    def forward(self, inputs: UnifiedSmplInputs) -> UnifiedSmplOutput:
         """Run a forward pass through the unified model.
 
-        This method takes either a `UnifiedSmplInputs` or a `PoseByKeypoints`
-        object, normalizes the inputs, passes them to the wrapped `smplx` model,
+        This method takes a `UnifiedSmplInputs` object, normalizes the inputs,
+        passes them to the wrapped `smplx` model,
         and returns the results in a standardized `UnifiedSmplOutput` container.
 
         Parameters
         ----------
-        inputs : UnifiedSmplInputs or PoseByKeypoints
+        inputs : UnifiedSmplInputs
             The input specification for the model.
 
         Returns

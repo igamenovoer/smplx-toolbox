@@ -23,8 +23,11 @@ Notes
 
 import sys
 from pathlib import Path
+
 import torch
 from torch import Tensor
+
+from smplx_toolbox.core import UnifiedSmplInputs, UnifiedSmplModel
 
 # Make local smplx implementation importable
 _SMPXLIB_ROOT = Path("context/refcode/smplx")
@@ -37,16 +40,26 @@ except ImportError as e:
     print(f"Failed to import smplx: {e}")
     sys.exit(1)
 
-from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, PoseByKeypoints
 
 # --- Configuration ---
 MODEL_ROOT = Path("data/body_models").resolve()
 OUTPUT_DIR = Path("tmp/smpl-export").resolve()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
 # --- OBJ Export Utility ---
 def export_obj(vertices: Tensor, faces: Tensor, file_path: Path) -> None:
-    """Export a mesh to an .obj file."""
+    """Export a mesh to an OBJ file.
+
+    Parameters
+    ----------
+    vertices : torch.Tensor
+        Vertex positions of shape ``(V, 3)`` or ``(1, V, 3)``.
+    faces : torch.Tensor
+        Face indices of shape ``(F, 3)`` or ``(1, F, 3)``. Assumed zero-based.
+    file_path : pathlib.Path
+        Destination path for the OBJ file.
+    """
     if vertices.ndim == 3:
         vertices = vertices.squeeze(0)
     if faces.ndim == 3:
@@ -59,7 +72,10 @@ def export_obj(vertices: Tensor, faces: Tensor, file_path: Path) -> None:
             f.write(f"f {face[0] + 1} {face[1] + 1} {face[2] + 1}\n")
     print(f"Exported mesh to {file_path}")
 
-def _device_dtype(t: Tensor | None, *, fallback_B: int = 1) -> tuple[torch.device, torch.dtype, int]:
+
+def _device_dtype(
+    t: Tensor | None, *, fallback_B: int = 1
+) -> tuple[torch.device, torch.dtype, int]:
     if t is not None:
         return (t.device, t.dtype, t.shape[0])
     return (torch.device("cpu"), torch.float32, fallback_B)
@@ -68,22 +84,33 @@ def _device_dtype(t: Tensor | None, *, fallback_B: int = 1) -> tuple[torch.devic
 def process_model(model_type: str, gender: str, model_name: str) -> None:
     """Load, process, and export a specified SMPL-family model.
 
-    - Exports default (identity) mesh
-    - Exports lightly posed mesh
-    - Exports lightly shaped mesh
-    - For SMPL-X, also adds light face and expression changes
+    Parameters
+    ----------
+    model_type : str
+        One of ``{"smpl", "smplh", "smplx"}``.
+    gender : str
+        One of ``{"neutral", "male", "female"}`` depending on available files.
+    model_name : str
+        Label used to name exported OBJ files.
+
+    Notes
+    -----
+    The function exports three meshes:
+    - Default (identity) mesh
+    - Lightly posed mesh (body/hand/face depending on model)
+    - Lightly shaped mesh (betas; expressions for SMPL-X if available)
     """
     print(f"--- Processing {model_name} ---")
 
     # 1) Load base model via official smplx API
     try:
-        create_kwargs = dict(
-            model_path=str(MODEL_ROOT),
-            model_type=model_type,
-            gender=gender,
-            use_pca=False,  # prefer AA hands
-            batch_size=1,
-        )
+        create_kwargs = {
+            "model_path": str(MODEL_ROOT),
+            "model_type": model_type,
+            "gender": gender,
+            "use_pca": False,  # prefer AA hands
+            "batch_size": 1,
+        }
         base_model = smplx_create(**create_kwargs)
         model = UnifiedSmplModel.from_smpl_model(base_model)
     except Exception as e:
@@ -92,28 +119,50 @@ def process_model(model_type: str, gender: str, model_name: str) -> None:
 
     # 2) Default (identity) mesh
     out_default = model(UnifiedSmplInputs())
-    export_obj(out_default.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}.obj")
+    export_obj(
+        out_default.vertices.detach().cpu(),
+        model.faces.detach().cpu(),
+        OUTPUT_DIR / f"{model_name}.obj",
+    )
 
-    # 3) Lightly posed mesh (use PoseByKeypoints for readability)
-    # Minimal body articulation: small elbows twist; add face/hands depending on family
+    # 3) Lightly posed mesh (segmented AA inputs)
+    # Minimal body articulation: small elbow twists; add face/hands depending on family
     rnd = torch.randn(1, 3) * 1e-2
-    kpts = {
-        "root": torch.zeros(1, 3),
-        "left_elbow": rnd.clone(),
-        "right_elbow": -rnd.clone(),
-    }
+    # Body pose (21 joints * 3)
+    pose_body = torch.zeros(1, 63)
+    # Body ordering (21): left_hip, right_hip, spine1, left_knee, right_knee, spine2,
+    # left_ankle, right_ankle, spine3, left_foot, right_foot, neck, left_collar,
+    # right_collar, head, left_shoulder, right_shoulder, left_elbow, right_elbow,
+    # left_wrist, right_wrist
+    LEFT_ELBOW_IDX = 17
+    RIGHT_ELBOW_IDX = 18
+    pose_body[:, LEFT_ELBOW_IDX * 3 : LEFT_ELBOW_IDX * 3 + 3] = rnd
+    pose_body[:, RIGHT_ELBOW_IDX * 3 : RIGHT_ELBOW_IDX * 3 + 3] = -rnd
+
+    inputs_pose = {"pose_body": pose_body}
     if model_type in ("smplh", "smplx"):
-        # A little curl on index1 fingers
-        kpts["left_index1"] = torch.randn(1, 3) * 1e-2
-        kpts["right_index1"] = torch.randn(1, 3) * 1e-2
+        # A little curl on index1 fingers (first joint in hand sequence)
+        left_hand_pose = torch.zeros(1, 45)
+        right_hand_pose = torch.zeros(1, 45)
+        left_hand_pose[:, 0:3] = torch.randn(1, 3) * 1e-2
+        right_hand_pose[:, 0:3] = torch.randn(1, 3) * 1e-2
+        inputs_pose.update(
+            left_hand_pose=left_hand_pose, right_hand_pose=right_hand_pose
+        )
     if model_type == "smplx":
         # Add slight jaw open and small eye rotations
-        kpts["jaw"] = torch.tensor([[1e-2, 0.0, 0.0]])
-        kpts["left_eye"] = torch.tensor([[0.0, 1e-2, 0.0]])
-        kpts["right_eye"] = torch.tensor([[0.0, -1e-2, 0.0]])
+        inputs_pose.update(
+            pose_jaw=torch.tensor([[1e-2, 0.0, 0.0]]),
+            left_eye_pose=torch.tensor([[0.0, 1e-2, 0.0]]),
+            right_eye_pose=torch.tensor([[0.0, -1e-2, 0.0]]),
+        )
 
-    posed_output = model(PoseByKeypoints.from_kwargs(**kpts))
-    export_obj(posed_output.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}-posed.obj")
+    posed_output = model(UnifiedSmplInputs.from_kwargs(**inputs_pose))
+    export_obj(
+        posed_output.vertices.detach().cpu(),
+        model.faces.detach().cpu(),
+        OUTPUT_DIR / f"{model_name}-posed.obj",
+    )
 
     # 4) Lightly shaped mesh (betas and expressions for SMPL-X)
     betas = torch.randn(1, model.num_betas) * 5e-2
@@ -121,7 +170,11 @@ def process_model(model_type: str, gender: str, model_name: str) -> None:
     if model_type == "smplx" and model.num_expressions > 0:
         inputs_shape["expression"] = torch.randn(1, model.num_expressions) * 5e-2
     shaped_output = model(UnifiedSmplInputs.from_kwargs(**inputs_shape))
-    export_obj(shaped_output.vertices.detach().cpu(), model.faces.detach().cpu(), OUTPUT_DIR / f"{model_name}-shaped.obj")
+    export_obj(
+        shaped_output.vertices.detach().cpu(),
+        model.faces.detach().cpu(),
+        OUTPUT_DIR / f"{model_name}-shaped.obj",
+    )
 
 
 if __name__ == "__main__":

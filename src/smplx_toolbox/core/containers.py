@@ -8,8 +8,8 @@ Classes
 -------
 UnifiedSmplInputs
     Standardized input container for model forward pass
-PoseByKeypoints
-    User-friendly per-joint pose specification
+NamedPose
+    Lightweight accessor around packed pose `(B, N, 3)` using ModelType
 UnifiedSmplOutput
     Standardized output container from model forward pass
 """
@@ -24,7 +24,12 @@ import torch
 from attrs import define, field, fields
 from torch import Tensor
 
-from .constants import ModelType
+from .constants import (
+    ModelType,
+    get_smplh_joint_names,
+    get_smplx_joint_names,
+    CoreBodyJoint,
+)
 
 
 @define(kw_only=True)
@@ -123,18 +128,7 @@ class UnifiedSmplInputs:
 
     @classmethod
     def from_kwargs(cls, **kwargs) -> UnifiedSmplInputs:
-        """Create an instance from keyword arguments.
-
-        Parameters
-        ----------
-        **kwargs
-            Keyword arguments corresponding to the attributes of the class.
-
-        Returns
-        -------
-        UnifiedSmplInputs
-            An instance of the class.
-        """
+        """Create an instance from keyword arguments."""
         return cls(**kwargs)
 
     def batch_size(self) -> int | None:
@@ -302,51 +296,6 @@ class UnifiedSmplInputs:
                     )
             # hand_betas ignored in SMPL-X models
 
-    @classmethod
-    def from_keypoint_pose(
-        cls, kpts: PoseByKeypoints, *, model_type: ModelType | str
-    ) -> UnifiedSmplInputs:
-        """Convert a per-joint keypoint pose specification to segmented inputs.
-
-        Uses PoseByKeypoints packed converters to reduce duplication, then
-        slices the resulting pose vector into UnifiedSmplInputs segments.
-        """
-        mt = str(model_type)
-        if mt == "smpl":
-            packed = kpts.to_smpl_pose()  # (B, 66)
-            root_orient = packed[:, 0:3]
-            pose_body = packed[:, 3:66]
-            return cls(root_orient=root_orient, pose_body=pose_body)
-        elif mt == "smplh":
-            packed = kpts.to_smplh_pose()  # (B, 156)
-            root_orient = packed[:, 0:3]
-            pose_body = packed[:, 3:66]
-            left_hand_pose = packed[:, 66:111]
-            right_hand_pose = packed[:, 111:156]
-            return cls(
-                root_orient=root_orient,
-                pose_body=pose_body,
-                left_hand_pose=left_hand_pose,
-                right_hand_pose=right_hand_pose,
-            )
-        else:  # smplx
-            packed = kpts.to_smplx_pose()  # (B, 165)
-            root_orient = packed[:, 0:3]
-            pose_body = packed[:, 3:66]
-            pose_jaw = packed[:, 66:69]
-            left_eye_pose = packed[:, 69:72]
-            right_eye_pose = packed[:, 72:75]
-            left_hand_pose = packed[:, 75:120]
-            right_hand_pose = packed[:, 120:165]
-            return cls(
-                root_orient=root_orient,
-                pose_body=pose_body,
-                left_hand_pose=left_hand_pose,
-                right_hand_pose=right_hand_pose,
-                pose_jaw=pose_jaw,
-                left_eye_pose=left_eye_pose,
-                right_eye_pose=right_eye_pose,
-            )
 
     # ------------------------------------------------------------------
     # Conversion methods (produce per-family input dicts in AA space)
@@ -422,395 +371,202 @@ class UnifiedSmplInputs:
         return out
 
 
+    # PoseByKeypoints has been removed. Use NamedPose for inspection/editing.
+
+
 @define(kw_only=True)
-class PoseByKeypoints:
-    """User-friendly per-joint axis-angle pose specification.
+class NamedPose:
+    """Lightweight accessor around a packed axis-angle pose `(B, N, 3)`.
 
-    This class provides a convenient way to define a pose by specifying the
-    axis-angle rotation for individual joints by name. All unspecified joints
-    are assumed to have a zero rotation.
+    This utility interprets a packed pose tensor using the model type's joint
+    namespace and provides convenience getters and setters by joint name.
 
-    Attributes
+    Parameters
     ----------
-    root : torch.Tensor, optional
-        Rotation for the corresponding joint. All attributes are optional Tensors
-        of shape (B, 3) in axis-angle format. See the class definition for a
-        full list of supported joint names.
+    model_type : ModelType
+        The SMPL family model type (`SMPL`, `SMPLH`, `SMPLX`).
+    packed_pose : torch.Tensor, optional
+        Packed axis-angle pose of shape `(B, N, 3)`. If omitted, a zero tensor
+        is allocated with `batch_size` and the appropriate `N` for `model_type`.
+    batch_size : int, optional
+        The batch size used when allocating `packed_pose` if it is not
+        provided. Defaults to 1.
 
     Notes
     -----
-    All joint fields are optional (B, 3) tensors in axis-angle format.
-    `None` means the joint rotation is not specified and will be treated as zeros.
-    The class includes aliases like `left_eyeball` for `left_eye`.
+    - Getters return `None` for unknown joint names.
+    - Setters raise `KeyError` for unknown joint names and `ValueError` for
+      invalid shapes. `(B, 3)` inputs are reshaped to `(B, 1, 3)` automatically.
+    - `repeat(n)` replicates the batch in-place to size `B * n`.
     """
 
-    # Root and body trunk
-    root: Tensor | None = None
-    left_hip: Tensor | None = None
-    right_hip: Tensor | None = None
-    spine1: Tensor | None = None
-    left_knee: Tensor | None = None
-    right_knee: Tensor | None = None
-    spine2: Tensor | None = None
-    left_ankle: Tensor | None = None
-    right_ankle: Tensor | None = None
-    spine3: Tensor | None = None
-    left_foot: Tensor | None = None
-    right_foot: Tensor | None = None
-    neck: Tensor | None = None
-    left_collar: Tensor | None = None
-    right_collar: Tensor | None = None
-    head: Tensor | None = None
-    left_shoulder: Tensor | None = None
-    right_shoulder: Tensor | None = None
-    left_elbow: Tensor | None = None
-    right_elbow: Tensor | None = None
-    left_wrist: Tensor | None = None
-    right_wrist: Tensor | None = None
+    model_type: ModelType
+    packed_pose: Tensor | None = None
+    batch_size: int = 1
 
-    # Face/eyes (SMPL-X only)
-    jaw: Tensor | None = None
-    left_eye: Tensor | None = None
-    right_eye: Tensor | None = None
-    left_eyeball: Tensor | None = None  # Alias for left_eye
-    right_eyeball: Tensor | None = None  # Alias for right_eye
+    # Internal mapping caches
+    _name_to_index: dict[str, int] = field(init=False, factory=dict)
+    _index_to_name: list[str] = field(init=False, factory=list)
 
-    # Left hand (15 joints)
-    left_thumb1: Tensor | None = None
-    left_thumb2: Tensor | None = None
-    left_thumb3: Tensor | None = None
-    left_index1: Tensor | None = None
-    left_index2: Tensor | None = None
-    left_index3: Tensor | None = None
-    left_middle1: Tensor | None = None
-    left_middle2: Tensor | None = None
-    left_middle3: Tensor | None = None
-    left_ring1: Tensor | None = None
-    left_ring2: Tensor | None = None
-    left_ring3: Tensor | None = None
-    left_pinky1: Tensor | None = None
-    left_pinky2: Tensor | None = None
-    left_pinky3: Tensor | None = None
+    def __attrs_post_init__(self) -> None:
+        # Build joint name order and mapping based on model_type
+        if self.model_type == ModelType.SMPL:
+            names = [j.value for j in CoreBodyJoint]
+        elif self.model_type == ModelType.SMPLH:
+            names = get_smplh_joint_names()
+        elif self.model_type == ModelType.SMPLX:
+            names = get_smplx_joint_names()
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
 
-    # Right hand (15 joints)
-    right_thumb1: Tensor | None = None
-    right_thumb2: Tensor | None = None
-    right_thumb3: Tensor | None = None
-    right_index1: Tensor | None = None
-    right_index2: Tensor | None = None
-    right_index3: Tensor | None = None
-    right_middle1: Tensor | None = None
-    right_middle2: Tensor | None = None
-    right_middle3: Tensor | None = None
-    right_ring1: Tensor | None = None
-    right_ring2: Tensor | None = None
-    right_ring3: Tensor | None = None
-    right_pinky1: Tensor | None = None
-    right_pinky2: Tensor | None = None
-    right_pinky3: Tensor | None = None
+        self._index_to_name = list(names)
+        self._name_to_index = {name: i for i, name in enumerate(self._index_to_name)}
 
-    @classmethod
-    def from_kwargs(cls, **kwargs) -> PoseByKeypoints:
-        """Create an instance from keyword arguments.
+        expected_n = len(self._index_to_name)
+
+        if self.packed_pose is None:
+            # Allocate zeros on CPU float32 by default
+            self.packed_pose = torch.zeros(
+                (self.batch_size, expected_n, 3), dtype=torch.float32
+            )
+        else:
+            # Validate provided shape
+            if self.packed_pose.ndim != 3 or self.packed_pose.shape[2] != 3:
+                raise ValueError(
+                    "packed_pose must have shape (B, N, 3); got "
+                    f"{tuple(self.packed_pose.shape)}"
+                )
+            if self.packed_pose.shape[1] != expected_n:
+                raise ValueError(
+                    f"packed_pose N mismatch for {self.model_type}: expected {expected_n}, "
+                    f"got {self.packed_pose.shape[1]}"
+                )
+
+    # -----------------
+    # Convenience API
+    # -----------------
+    def get_joint_pose(self, name: str) -> Tensor | None:
+        """Get a copy of the joint pose `(B, 1, 3)` for the given name.
 
         Parameters
         ----------
-        **kwargs
-            Keyword arguments corresponding to the attributes of the class.
+        name : str
+            Joint name within the current model type's namespace.
 
         Returns
         -------
-        PoseByKeypoints
-            An instance of the class.
+        torch.Tensor or None
+            A detached clone of shape `(B, 1, 3)` if the joint exists, else None.
         """
-        return cls(**kwargs)
+        idx = self.get_joint_index(name)
+        if idx is None:
+            return None
+        return self.packed_pose[:, idx : idx + 1, :].detach().clone()  # type: ignore[index]
 
-    # ---------------------------
-    # Packed pose conversions
-    # ---------------------------
-    def _infer_batch_device_dtype(self) -> tuple[int, torch.device | None, torch.dtype]:
-        bsz = self.batch_size()
-        if bsz is None:
-            bsz = 1
-        device: torch.device | None = None
-        dtype: torch.dtype = torch.float32
-        for f in fields(PoseByKeypoints):
-            value = getattr(self, f.name)
-            if isinstance(value, torch.Tensor):
-                device = value.device
-                dtype = value.dtype
-                break
-        return bsz, device, dtype
+    def set_joint_pose(self, name: str, pose: Tensor) -> bool:
+        """Set the joint pose by name.
 
-    def _stack_or_zero(self, names: list[str]) -> Tensor:
-        bsz, device, dtype = self._infer_batch_device_dtype()
-        parts = []
-        for nm in names:
-            val = getattr(self, nm, None)
-            if isinstance(val, torch.Tensor):
-                parts.append(val)
-            else:
-                parts.append(torch.zeros((bsz, 3), device=device, dtype=dtype))
-        return torch.cat(parts, dim=-1) if parts else torch.zeros((bsz, 0), device=device, dtype=dtype)
-
-    def to_smpl_pose(self) -> Tensor:
-        """Convert named joints to a packed SMPL pose vector (B, 66).
-
-        Order: root(3) + 21 body joints (63). Unspecified joints are zero-filled.
-        """
-        body_joints = [
-            "left_hip",
-            "right_hip",
-            "spine1",
-            "left_knee",
-            "right_knee",
-            "spine2",
-            "left_ankle",
-            "right_ankle",
-            "spine3",
-            "left_foot",
-            "right_foot",
-            "neck",
-            "left_collar",
-            "right_collar",
-            "head",
-            "left_shoulder",
-            "right_shoulder",
-            "left_elbow",
-            "right_elbow",
-            "left_wrist",
-            "right_wrist",
-        ]
-        bsz, device, dtype = self._infer_batch_device_dtype()
-        root = self.root if isinstance(self.root, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype)
-        body = self._stack_or_zero(body_joints)
-        return torch.cat([root, body], dim=-1)
-
-    def to_smplh_pose(self) -> Tensor:
-        """Convert named joints to a packed SMPL-H pose vector (B, 156).
-
-        Order: root(3) + body(63) + left hand 15 joints (45) + right hand 15 joints (45).
-        Unspecified joints are zero-filled.
-        """
-        left_hand_joints = [
-            "left_thumb1",
-            "left_thumb2",
-            "left_thumb3",
-            "left_index1",
-            "left_index2",
-            "left_index3",
-            "left_middle1",
-            "left_middle2",
-            "left_middle3",
-            "left_ring1",
-            "left_ring2",
-            "left_ring3",
-            "left_pinky1",
-            "left_pinky2",
-            "left_pinky3",
-        ]
-        right_hand_joints = [
-            "right_thumb1",
-            "right_thumb2",
-            "right_thumb3",
-            "right_index1",
-            "right_index2",
-            "right_index3",
-            "right_middle1",
-            "right_middle2",
-            "right_middle3",
-            "right_ring1",
-            "right_ring2",
-            "right_ring3",
-            "right_pinky1",
-            "right_pinky2",
-            "right_pinky3",
-        ]
-        smpl = self.to_smpl_pose()
-        left = self._stack_or_zero(left_hand_joints)
-        right = self._stack_or_zero(right_hand_joints)
-        return torch.cat([smpl, left, right], dim=-1)
-
-    def to_smplx_pose(self) -> Tensor:
-        """Convert named joints to a packed SMPL-X pose vector (B, 165).
-
-        Order: root(3) + body(63) + jaw(3) + left_eye(3) + right_eye(3) + left hand(45) + right hand(45).
-        Unspecified joints are zero-filled. Eye aliases (left_eyeball/right_eyeball) are honored.
-        """
-        smplh = self.to_smplh_pose()
-        bsz, device, dtype = self._infer_batch_device_dtype()
-        jaw = self.jaw if isinstance(self.jaw, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype)
-        left_eye = (
-            self.left_eye
-            if isinstance(self.left_eye, torch.Tensor)
-            else (self.left_eyeball if isinstance(self.left_eyeball, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype))
-        )
-        right_eye = (
-            self.right_eye
-            if isinstance(self.right_eye, torch.Tensor)
-            else (self.right_eyeball if isinstance(self.right_eyeball, torch.Tensor) else torch.zeros((bsz, 3), device=device, dtype=dtype))
-        )
-        return torch.cat([smplh[:, :66], jaw, left_eye, right_eye, smplh[:, 66:]], dim=-1)
-
-    def batch_size(self) -> int | None:
-        """Infer the batch size from the first non-None tensor attribute.
-
-        Returns
-        -------
-        int or None
-            The batch size if it can be inferred, otherwise None.
-        """
-        for f in fields(PoseByKeypoints):
-            value = getattr(self, f.name)
-            if value is not None and isinstance(value, Tensor):
-                return value.shape[0]
-        return None
-
-    def check_valid_by_keypoints(
-        self,
-        model_type: ModelType | str,
-        strict: bool = False,
-        warn_fn: Callable[[str], None] | None = None,
-    ) -> None:
-        """Validate keypoint inputs against model capabilities.
-
-        This method checks for common issues, such as providing hand joint data
-        for a model that doesn't support it (e.g., SMPL), or providing
-        inconsistent batch sizes across joints.
+        Accepts `(B, 1, 3)` or `(B, 3)` and reshapes `(B, 3) -> (B, 1, 3)`
+        automatically. Copies values under `torch.no_grad()`.
 
         Parameters
         ----------
-        model_type : ModelType
-            The target model type ('smpl', 'smplh', 'smplx').
-        strict : bool, optional
-            If True, raise a `ValueError` for validation failures. If False,
-            issue a warning instead. Defaults to False.
-        warn_fn : Callable[[str], None], optional
-            A custom function to handle warnings. Defaults to `warnings.warn`.
+        name : str
+            Joint name within the current model type's namespace.
+        pose : torch.Tensor
+            Pose tensor of shape `(B, 1, 3)` or `(B, 3)`.
+
+        Returns
+        -------
+        bool
+            True if the joint was set.
 
         Raises
         ------
+        KeyError
+            If the joint name is not recognized for the current model type.
         ValueError
-            If `strict` is True and a validation check fails.
+            If the provided pose shape is invalid.
         """
-        batch_size = self.batch_size()
-        warn = warn_fn or (lambda msg: warnings.warn(msg, stacklevel=3))
-
-        # Check batch consistency
-        for f in fields(PoseByKeypoints):
-            value = getattr(self, f.name)
-            if value is not None and isinstance(value, Tensor):
-                if value.shape[0] != batch_size:
-                    raise ValueError(f"Inconsistent batch size in {f.name}")
-                if value.shape != (batch_size, 3):
-                    raise ValueError(f"{f.name} must be (B, 3), got {value.shape}")
-
-        # Model-specific checks
-        if model_type == "smpl":
-            # SMPL: no hands or face
-            has_hands = any(
-                getattr(self, f.name, None) is not None
-                for f in fields(PoseByKeypoints)
-                if "thumb" in f.name
-                or "index" in f.name
-                or "middle" in f.name
-                or "ring" in f.name
-                or "pinky" in f.name
+        idx = self.get_joint_index(name)
+        if idx is None:
+            raise KeyError(
+                f"Unknown joint '{name}' for model type {self.model_type.value}"
             )
-            if has_hands:
-                msg = "SMPL does not support hand joints - they will be ignored"
-                if strict:
-                    raise ValueError(msg)
-                warn(msg)
 
-            if (
-                self.jaw is not None
-                or self.left_eye is not None
-                or self.right_eye is not None
-            ):
-                msg = "SMPL does not support face joints - they will be ignored"
-                if strict:
-                    raise ValueError(msg)
-                warn(msg)
+        B = self.packed_pose.shape[0]  # type: ignore[union-attr]
+        target = pose
+        if target.ndim == 2 and target.shape == (B, 3):
+            target = target.view(B, 1, 3)
+        elif target.ndim == 3 and target.shape == (B, 1, 3):
+            pass
+        else:
+            raise ValueError(
+                f"pose must be (B, 3) or (B, 1, 3); got {tuple(target.shape)}"
+            )
 
-        elif model_type == "smplh":
-            # Check for partial hand specification
-            left_hand_joints = [
-                "left_thumb1",
-                "left_thumb2",
-                "left_thumb3",
-                "left_index1",
-                "left_index2",
-                "left_index3",
-                "left_middle1",
-                "left_middle2",
-                "left_middle3",
-                "left_ring1",
-                "left_ring2",
-                "left_ring3",
-                "left_pinky1",
-                "left_pinky2",
-                "left_pinky3",
-            ]
-            right_hand_joints = [
-                "right_thumb1",
-                "right_thumb2",
-                "right_thumb3",
-                "right_index1",
-                "right_index2",
-                "right_index3",
-                "right_middle1",
-                "right_middle2",
-                "right_middle3",
-                "right_ring1",
-                "right_ring2",
-                "right_ring3",
-                "right_pinky1",
-                "right_pinky2",
-                "right_pinky3",
-            ]
+        with torch.no_grad():
+            self.packed_pose[:, idx : idx + 1, :].copy_(  # type: ignore[index]
+                target.to(device=self.packed_pose.device, dtype=self.packed_pose.dtype)  # type: ignore[union-attr]
+            )
+        return True
 
-            left_provided = [
-                j for j in left_hand_joints if getattr(self, j, None) is not None
-            ]
-            right_provided = [
-                j for j in right_hand_joints if getattr(self, j, None) is not None
-            ]
+    def to_dict(self) -> dict[str, Tensor]:
+        """Get a mapping from joint name to a view of `(B, 1, 3)`.
 
-            if left_provided and len(left_provided) < len(left_hand_joints):
-                msg = f"Partial left hand specification ({len(left_provided)}/15 joints) - missing joints will be zero-filled"
-                if strict:
-                    raise ValueError(msg)
-                warn(msg)
+        Notes
+        -----
+        The returned tensors are views into `packed_pose`. In-place edits will
+        mutate `packed_pose` directly.
+        """
+        return {
+            name: self.packed_pose[:, i : i + 1, :]  # type: ignore[index]
+            for i, name in enumerate(self._index_to_name)
+        }
 
-            if right_provided and len(right_provided) < len(right_hand_joints):
-                msg = f"Partial right hand specification ({len(right_provided)}/15 joints) - missing joints will be zero-filled"
-                if strict:
-                    raise ValueError(msg)
-                warn(msg)
+    # -----------------
+    # Name/index helpers
+    # -----------------
+    def get_joint_index(self, name: str) -> int | None:
+        """Get the 0-based joint index for `name`, or None if not found."""
+        return self._name_to_index.get(name)
 
-            # SMPL-H: face not supported
-            if (
-                self.jaw is not None
-                or self.left_eye is not None
-                or self.right_eye is not None
-            ):
-                msg = "SMPL-H does not support face joints - they will be ignored"
-                if strict:
-                    raise ValueError(msg)
-                warn(msg)
+    def get_joint_indices(self, names: list[str]) -> list[int | None]:
+        """Vectorized variant of :meth:`get_joint_index`."""
+        return [self.get_joint_index(n) for n in names]
 
-        elif model_type == "smplx":
-            # Check for single eye specification
-            has_left_eye = self.left_eye is not None or self.left_eyeball is not None
-            has_right_eye = self.right_eye is not None or self.right_eyeball is not None
+    def get_joint_name(self, index: int) -> str:
+        """Get the canonical joint name for the given index.
 
-            if has_left_eye and not has_right_eye:
-                msg = "Only left eye specified - right eye will be zero-filled"
-                warn(msg)
-            elif has_right_eye and not has_left_eye:
-                msg = "Only right eye specified - left eye will be zero-filled"
-                warn(msg)
+        Raises
+        ------
+        IndexError
+            If the index is out of range for the current model type.
+        """
+        if index < 0 or index >= len(self._index_to_name):
+            raise IndexError(
+                f"Index {index} out of range for model type {self.model_type.value}"
+            )
+        return self._index_to_name[index]
+
+    def get_joint_names(self, indices: list[int]) -> list[str]:
+        """Vectorized variant of :meth:`get_joint_name`."""
+        return [self.get_joint_name(i) for i in indices]
+
+    # -----------------
+    # Batch utilities
+    # -----------------
+    def repeat(self, n: int) -> None:
+        """Repeat the batch in-place to size `B * n`.
+
+        Parameters
+        ----------
+        n : int
+            Replication factor; must be positive.
+        """
+        if n <= 0:
+            raise ValueError("n must be positive")
+        self.packed_pose = self.packed_pose.repeat(n, 1, 1)  # type: ignore[union-attr]
 
 
 @define(kw_only=True)

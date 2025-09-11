@@ -33,12 +33,7 @@ try:
 except Exception as _imp_err:  # pragma: no cover - environment dependent
     pytest.skip(f"smplx not importable: {_imp_err}", allow_module_level=True)
 
-from smplx_toolbox.core import (
-    UnifiedSmplModel,
-    UnifiedSmplInputs,
-    PoseByKeypoints,
-    UnifiedSmplOutput,
-)
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, UnifiedSmplOutput
 
 # ------------------------------------------------------------------------
 # Environment checks
@@ -188,49 +183,7 @@ def test_inputs_validation_rules_smplx_pairwise_hands_and_eyes() -> None:
 
 
 # ------------------------------------------------------------------------
-# Tests: PoseByKeypoints conversion and validation (no model needed)
-# ------------------------------------------------------------------------
-
-def test_pose_by_keypoints_to_inputs_smplx_minimal() -> None:
-    B = 2
-    kpts = PoseByKeypoints(
-        root=torch.randn(B, 3),
-        left_elbow=torch.randn(B, 3),
-        right_elbow=torch.randn(B, 3),
-        jaw=torch.randn(B, 3),
-        left_eyeball=torch.randn(B, 3),
-        right_eye=torch.randn(B, 3),
-    )
-    # Validate (should accept subset and zero-fill)
-    kpts.check_valid_by_keypoints("smplx", strict=False)
-
-    # Convert
-    inputs = UnifiedSmplInputs.from_keypoint_pose(kpts, model_type="smplx")
-    assert inputs.root_orient is not None
-    assert inputs.pose_body is not None
-    assert inputs.pose_body.shape == (B, 63)
-    assert inputs.pose_jaw is not None and inputs.pose_jaw.shape == (B, 3)
-    assert inputs.left_eye_pose is not None and inputs.right_eye_pose is not None
-    assert inputs.left_eye_pose.shape == (B, 3) and inputs.right_eye_pose.shape == (B, 3)
-
-
-def test_pose_by_keypoints_to_inputs_smplh_drops_face() -> None:
-    B = 1
-    kpts = PoseByKeypoints(
-        root=torch.randn(B, 3),
-        jaw=torch.randn(B, 3),
-        left_eye=torch.randn(B, 3),
-        right_eye=torch.randn(B, 3),
-        left_index1=torch.randn(B, 3),
-    )
-    kpts.check_valid_by_keypoints("smplh", strict=False)
-    inputs = UnifiedSmplInputs.from_keypoint_pose(kpts, model_type="smplh")
-    assert inputs.pose_jaw is None
-    assert inputs.left_eye_pose is None
-    assert inputs.right_eye_pose is None
-    assert inputs.left_hand_pose is not None and inputs.right_hand_pose is not None
-    assert inputs.left_hand_pose.shape == (B, 45)
-    assert inputs.right_hand_pose.shape == (B, 45)
+# PoseByKeypoints has been removed; tests now focus on UnifiedSmplInputs and forward paths.
 
 
 # ------------------------------------------------------------------------
@@ -271,7 +224,10 @@ def test_forward_shapes_and_unification_real(
     else:
         if not _has_model_dir("smpl"):
             pytest.skip("SMPL model directory missing")
-        model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smpl")
+        try:
+            model = smplx_create(model_path=str(_MODEL_ROOT), model_type="smpl")
+        except Exception as e:
+            pytest.skip(f"SMPL model not loadable: {e}")
 
     uni = UnifiedSmplModel.from_smpl_model(model)
 

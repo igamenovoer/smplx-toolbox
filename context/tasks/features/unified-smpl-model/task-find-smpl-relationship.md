@@ -375,4 +375,10 @@ pixi run -e dev python -m pytest -q
 - Assumption: Unifying to SMPL-X joint set is acceptable; face joints missing on SMPL-H are filled with configured placeholder.
 - Question: Should we expose an option to emit the raw/native joint set alongside unified by default? Current spec puts it in `extras`.
 - Question: Should we support `.pkl` models from the official `smplx` repo directly in v1, or defer to a later phase?
+## Note: PoseByKeypoints Status (Outdated)
+
+- PoseByKeypoints has been removed from the implementation and replaced by a simpler flow.
+- Current flow: pass segmented AA tensors via `UnifiedSmplInputs`; use `NamedPose` only for inspecting/editing packed `(B, N, 3)` poses by joint name.
+- Joint namespaces and mappings are defined by `ModelType` and constants in `src/smplx_toolbox/core/constants.py`.
+- This document remains as an archived design reference; code paths referencing PoseByKeypoints no longer exist.
 

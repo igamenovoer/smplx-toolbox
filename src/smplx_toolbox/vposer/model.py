@@ -22,7 +22,7 @@ Input/Output Mapping for Body Pose (21 joints)
 VPoser expects the body joint axis‑angle in a fixed 21‑joint order (pelvis/root
 excluded). We adopt the exact body ordering already used throughout this
 toolbox to construct 63‑DoF body poses (see
-`src/smplx_toolbox/core/containers.py:UnifiedSmplInputs.from_keypoint_pose`):
+canonical 21‑joint body ordering used across the toolbox:
 
     [left_hip, right_hip, spine1, left_knee, right_knee, spine2,
      left_ankle, right_ankle, spine3, left_foot, right_foot,
@@ -41,8 +41,8 @@ Why this is correct and how to verify:
   and verify joints align joint‑wise (except small reconstruction error from the
   VAE). See the helpers below.
 
-Use :meth:`convert_struct_to_pose` to build a `(B, 63)` tensor from a
-`PoseByKeypoints`, and :meth:`convert_pose_to_struct` to go back. This helps
+Use :meth:`convert_named_pose_to_pose_body` to build a `(B, 63)` tensor from a
+`NamedPose`, and :meth:`convert_pose_body_to_named_pose` to go back. This helps
 inspect exactly what VPoser consumes/produces without memorizing indices.
 """
 
@@ -57,8 +57,8 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.distributions import Normal
 
-from smplx_toolbox.core.constants import CoreBodyJoint
-from smplx_toolbox.core.containers import PoseByKeypoints
+from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
+from smplx_toolbox.core.containers import NamedPose
 
 
 class BatchFlatten(nn.Module):
@@ -324,19 +324,16 @@ class VPoserModel(nn.Module):
         return out
 
     # ------------------------------------------------------------------
-    # Convenience utilities for PoseByKeypoints interop
+    # Convenience utilities for NamedPose interop
     # ------------------------------------------------------------------
     @staticmethod
-    def convert_struct_to_pose(kpts: PoseByKeypoints) -> Tensor:
-        """Build a (B, 63) body axis‑angle from ``PoseByKeypoints``.
-
-        The joint order matches the 21‑joint body layout used by VPoser and
-        `UnifiedSmplInputs.from_keypoint_pose()`.
+    def convert_named_pose_to_pose_body(npz: NamedPose) -> Tensor:
+        """Build a (B, 63) body axis‑angle from ``NamedPose``.
 
         Parameters
         ----------
-        kpts : PoseByKeypoints
-            Per‑joint axis‑angle specification (only body joints are used).
+        npz : NamedPose
+            Packed pose accessor; only body joints are used.
 
         Returns
         -------
@@ -366,33 +363,23 @@ class VPoserModel(nn.Module):
             CoreBodyJoint.LEFT_WRIST,
             CoreBodyJoint.RIGHT_WRIST,
         ]
-
-        # Infer batch/device/dtype from the first available joint
-        batch: int | None = kpts.batch_size()
-        if batch is None:
-            batch = 1
-        device = None
-        dtype = torch.float32
-        for enum_name in body_joints:
-            name = enum_name.value
-            val = getattr(kpts, name, None)
-            if isinstance(val, Tensor):
-                device = val.device
-                dtype = val.dtype
-                break
-
-        def get_or_zeros(name: str) -> Tensor:
-            val = getattr(kpts, name, None)
-            if isinstance(val, Tensor):
-                return val
-            return torch.zeros((batch or 1, 3), device=device, dtype=dtype)
-
-        parts = [get_or_zeros(e.value) for e in body_joints]
-        return torch.cat(parts, dim=-1)  # (B, 63)
+        # Extract from named pose; if any name missing, use zeros
+        B = npz.packed_pose.shape[0]
+        device = npz.packed_pose.device
+        dtype = npz.packed_pose.dtype
+        parts: list[Tensor] = []
+        for e in body_joints:
+            g = npz.get_joint_pose(e.value)
+            if g is None:
+                parts.append(torch.zeros((B, 1, 3), device=device, dtype=dtype))
+            else:
+                parts.append(g)
+        body = torch.cat(parts, dim=1)  # (B,21,3)
+        return body.reshape(B, 63)
 
     @staticmethod
-    def convert_pose_to_struct(pose_body: Tensor) -> PoseByKeypoints:
-        """Convert a body AA pose to a ``PoseByKeypoints`` instance.
+    def convert_pose_body_to_named_pose(pose_body: Tensor) -> NamedPose:
+        """Convert a body AA pose to a ``NamedPose`` instance (SMPL namespace).
 
         Parameters
         ----------
@@ -401,9 +388,9 @@ class VPoserModel(nn.Module):
 
         Returns
         -------
-        PoseByKeypoints
-            A new instance with body joint fields populated; all other fields
-            (root, hands, face) remain ``None``.
+        NamedPose
+            A new instance with body joint fields populated in SMPL namespace;
+            root (pelvis) remains zero.
         """
         if pose_body.dim() == 2 and pose_body.shape[1] == 63:
             B = pose_body.shape[0]
@@ -413,7 +400,6 @@ class VPoserModel(nn.Module):
             B = body.shape[0]
         else:
             raise ValueError("pose_body must be (B,63) or (B,21,3)")
-
         names = [
             CoreBodyJoint.LEFT_HIP.value,
             CoreBodyJoint.RIGHT_HIP.value,
@@ -437,8 +423,7 @@ class VPoserModel(nn.Module):
             CoreBodyJoint.LEFT_WRIST.value,
             CoreBodyJoint.RIGHT_WRIST.value,
         ]
-
-        kwargs: dict[str, Tensor] = {}
+        npz = NamedPose(model_type=ModelType.SMPL, batch_size=B)
         for i, name in enumerate(names):
-            kwargs[name] = body[:, i]
-        return PoseByKeypoints.from_kwargs(**kwargs)
+            npz.set_joint_pose(name, body[:, i])
+        return npz

@@ -9,7 +9,7 @@ The wrapper provides a single API for SMPL, SMPL-H, and SMPL-X by normalizing in
 ```python
 import torch
 import smplx
-from smplx_toolbox.core import UnifiedSmplModel, PoseByKeypoints
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs
 
 # 1) Create base model (e.g., SMPL-X)
 base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use_pca=False, batch_size=1)
@@ -17,18 +17,17 @@ base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use
 # 2) Wrap it
 model = UnifiedSmplModel.from_smpl_model(base)
 
-# 3) Define a pose by joint names (AA format)
-pose = PoseByKeypoints(
-    left_shoulder=torch.tensor([[0.0, 0.0, -1.5]]),
-    right_shoulder=torch.tensor([[0.0, 0.0, 1.5]]),
-    jaw=torch.tensor([[0.2, 0.0, 0.0]]),  # SMPL-X only
+# 3) Prepare segmented inputs (axis-angle)
+inputs = UnifiedSmplInputs(
+    root_orient=torch.zeros(1, 3),
+    pose_body=torch.zeros(1, 63),  # 21 body joints * 3
 )
 
 # 4) Forward
-out = model(pose)
+out = model(inputs)
 print(out.vertices.shape, out.joints.shape)
 
-# 5) Select joints by name
+# 5) Select joints by name (unified 55-joint space)
 shoulders = model.select_joints(out.joints, names=["left_shoulder", "right_shoulder"])
 ```
 
@@ -50,4 +49,3 @@ mesh.show()
 ```
 
 For SMPL-H, use `SMPLHModel` and `SMPLHModel.from_smplh(...)`.
-

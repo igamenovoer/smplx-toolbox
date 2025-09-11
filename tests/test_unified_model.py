@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 
 from smplx_toolbox.core import (
-    PoseByKeypoints,
     UnifiedSmplInputs,
     UnifiedSmplModel,
     UnifiedSmplOutput,
@@ -118,25 +117,7 @@ def test_unified_model_forward():
     assert output.vertices.shape == (2, 10475, 3)
     assert output.joints.shape == (2, 55, 3)
 
-    # Test with pose by keypoints
-    print("\n[TEST 2] Forward pass with PoseByKeypoints...")
-    # Create a pose with just a few joints specified
-    pose_input = PoseByKeypoints(
-        root=torch.randn(2, 3),
-        left_elbow=torch.randn(2, 3),
-        right_elbow=torch.randn(2, 3),
-        jaw=torch.randn(2, 3),  # SMPL-X specific
-    )
-
-    output = unified(pose_input)
-    print(
-        f"  [OK] Output shape: vertices={output.vertices.shape}, joints={output.joints.shape}"
-    )
-    # Note: batch size inference may vary, just check shape dimensions
-    assert output.vertices.ndim == 3
-    assert output.joints.ndim == 3
-
-    print("\n[SUCCESS] All forward pass tests passed!")
+    print("\n[SUCCESS] Forward pass test passed!")
 
 
 def test_unified_output():

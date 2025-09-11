@@ -5,7 +5,7 @@ The `UnifiedSmplModel` wraps any SMPL/SMPL-H/SMPL-X model created via `smplx.cre
 ## Key ideas
 
 - Auto‑detects model type (`smpl`, `smplh`, `smplx`).
-- Accepts `UnifiedSmplInputs` or `PoseByKeypoints` and prepares model‑specific kwargs.
+- Accepts `UnifiedSmplInputs` and prepares model‑specific kwargs.
 - Unifies joints to the first 55 SMPL‑X joints, filling missing ones (configurable as zeros or NaNs).
 - Always returns vertices and a flattened full pose vector used for LBS.
 
@@ -14,17 +14,16 @@ The `UnifiedSmplModel` wraps any SMPL/SMPL-H/SMPL-X model created via `smplx.cre
 ```python
 import torch
 import smplx
-from smplx_toolbox.core import UnifiedSmplModel, PoseByKeypoints
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs
 
 base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use_pca=False)
 umodel = UnifiedSmplModel.from_smpl_model(base)
 
-pose = PoseByKeypoints(left_shoulder=torch.tensor([[0.0, 0.0, -1.5]]))
-out = umodel(pose)
+inputs = UnifiedSmplInputs(root_orient=torch.zeros(1, 3), pose_body=torch.zeros(1, 63))
+out = umodel(inputs)
 print(out.vertices.shape, out.joints.shape, umodel.model_type)
 ```
 
 ## API Reference
 
 ::: smplx_toolbox.core.unified_model.UnifiedSmplModel
-

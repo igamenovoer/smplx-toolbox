@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import pickle
 from pathlib import Path
+import sys
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,7 @@ from smplx_toolbox.core.constants import CoreBodyJoint
 from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
 from smplx_toolbox.optimization import KeypointMatchLossBuilder, VPoserPriorLossBuilder
 from smplx_toolbox.vposer import load_vposer
+from smplx_toolbox.utils import select_device
 
 
 TMP_ROOT = Path("tmp/unittests/fitting")
@@ -61,6 +63,8 @@ def _build_smplx() -> UnifiedSmplModel:
         )
     except AssertionError as e:
         pytest.skip(f"SMPL-X resources missing: {e}")
+    device = select_device()
+    base = base.to(device)
     return UnifiedSmplModel.from_smpl_model(base)
 
 
@@ -68,7 +72,7 @@ def _build_smplx() -> UnifiedSmplModel:
 def test_vposer_latent_round_trip() -> None:
     if not VPOSER_CKPT.exists():
         pytest.skip("VPoser checkpoint not found")
-    device = torch.device("cpu")
+    device = select_device()
     vposer = load_vposer(str(VPOSER_CKPT), map_location=device)
     vposer.to(device=device).eval()
 

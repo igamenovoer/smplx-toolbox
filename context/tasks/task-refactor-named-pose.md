@@ -18,45 +18,46 @@
 
 - Class style:
   - Implemented as an `attrs` class.
-  - Required init parameter: `smpl_type: str` (one of `{smpl, smplh, smplx}`).
+  - Required init parameter: `model_type: ModelType` (see `src/smplx_toolbox/core/constants.py`).
 
 - Data members:
-  - `smpl_type: str` — required.
+  - `model_type: ModelType` — required model kind (`SMPL`, `SMPLH`, `SMPLX`).
   - `packed_pose: torch.Tensor` — shape `(B, N, 3)` (axis–angle per joint), contiguous.
   - Optional convenience: `batch_size: int = 1` — used to allocate `packed_pose` when not supplied.
 
 - Core behavior:
-  - Interpret `packed_pose` with a fixed joint namespace and index mapping based on `smpl_type`.
+  - Interpret `packed_pose` with a fixed joint namespace and index mapping based on `model_type`.
   - Provide safe getters/setters by joint name that do not create autograd edges or modify gradients.
-  - Unsupported joints for the given `smpl_type` return `None` (get) / no-op with `False` (set).
+  - Unsupported joints for the given `model_type` return `None` on getters; setters raise a `KeyError`.
 
 - Public API (minimal):
   - `get_joint_pose(name: str) -> torch.Tensor | None`
     - Returns a detached tensor of shape `(B, 1, 3)` (copy) if supported; otherwise `None`.
   - `set_joint_pose(name: str, pose: torch.Tensor) -> bool`
-    - Accepts `(B, 1, 3)` (or `(B, 3)` broadcasted) and assigns under `torch.no_grad()` into `packed_pose` at the appropriate index; returns `True` if set, `False` if unsupported.
+    - Accepts `(B, 1, 3)` or `(B, 3)` and reshapes `(B, 3) -> (B, 1, 3)` automatically. Assigns under `torch.no_grad()` into `packed_pose` at the appropriate index; returns `True` if set; raises `KeyError` if the joint name is not valid for the current `model_type`; raises `ValueError` for wrong shapes.
   - `to_dict() -> dict[str, torch.Tensor]`
     - Returns a mapping from joint names to tensor views of shape `(B, 1, 3)` that slice `packed_pose` in-place. Modifying these tensors will modify `NamedPose.packed_pose` directly.
-  - `get_joint_index(name: str) -> int`
-    - Returns the integer index (0-based within the second dimension of `packed_pose`) for the joint `name`; raises `KeyError` if the name is not valid for the current `smpl_type` (aliases like `left_eyeball` map to the corresponding eye index).
-  - `get_joint_indices(names: list[str]) -> list[int]`
-    - Vectorized variant returning indices for each name; raises `KeyError` if any name is invalid for the current `smpl_type`.
+  - `get_joint_index(name: str) -> int | None`
+    - Returns the integer index (0-based within the second dimension of `packed_pose`) for the joint `name`; returns `None` if the name is not valid for the current `model_type`.
+  - `get_joint_indices(names: list[str]) -> list[int | None]`
+    - Vectorized variant returning indices for each name; returns `None` for any name that is invalid for the current `model_type`.
   - `get_joint_name(index: int) -> str`
-    - Inverse mapping: returns the canonical joint name for a given index; raises `IndexError` if out of range for the current `smpl_type`.
+    - Inverse mapping: returns the canonical joint name for a given index; raises `IndexError` if out of range for the current `model_type`.
   - `get_joint_names(indices: list[int]) -> list[str]`
     - Vectorized variant returning names for each index; raises `IndexError` on any invalid index.
+  - `repeat(n: int) -> None`
+    - In-place batch replication: replaces `packed_pose` with its batch repeated `n` times along dim 0, making batch size `B * n`. Intended for quickly constructing `B > 1` without needing joint details.
 
 - Joint namespace and counts (N):
   - SMPL: `N=22` — `root` + 21 body joints.
   - SMPL-H: `N=52` — SMPL body + 15 left hand + 15 right hand.
-  - SMPL-X: `N=55` — SMPL body + `jaw`, `left_eye`, `right_eye` + both hands.
-  - Eye aliases: `left_eyeball -> left_eye`, `right_eyeball -> right_eye`.
+  - SMPL-X: `N=55` — SMPL body + `jaw`, `left_eye_smplhf`, `right_eye_smplhf` + both hands.
 
 - Validation:
   - Init behavior:
-    - If `packed_pose` is provided, validate `packed_pose.ndim == 3`, last dim is 3, and second dim equals the expected `N` for `smpl_type`.
+    - If `packed_pose` is provided, validate `packed_pose.ndim == 3`, last dim is 3, and second dim equals the expected `N` for `model_type`.
     - If `packed_pose` is not provided, allocate a zeros tensor of shape `(batch_size, N, 3)` on CPU with `float32`.
-  - Type-check inputs in setters; raise `ValueError` for wrong shapes, return `False` for unsupported joints.
+  - Type-check inputs in setters; raise `ValueError` for wrong shapes; raise `KeyError` for unsupported joints.
 
 - Gradient-safety:
   - `get_joint_pose` returns a `.detach().clone()` to avoid creating edges.
@@ -75,8 +76,8 @@
 
 1. Introduce `NamedPose` alongside existing code
    - Add class to `src/smplx_toolbox/core/containers.py` with the API above.
-   - Init: require `smpl_type`, optionally accept `packed_pose`; if missing, create zeros `(batch_size, N, 3)`.
-   - Implement joint-index maps for all `smpl_type` variants from existing ordered lists used in conversions.
+   - Init: require `model_type: ModelType`, optionally accept `packed_pose`; if missing, create zeros `(batch_size, N, 3)`.
+   - Use `ModelType` and mappings from `core.constants` to resolve joint indices; do not rely on legacy lists.
    - Add alias handling for eye joints.
 
 2. Mark `PoseByKeypoints` as deprecated
@@ -88,7 +89,7 @@
    - Update any tests, examples, and internal helpers to pass packed poses directly.
 
 4. Add unit tests for `NamedPose`
-   - For each `smpl_type`, construct `packed_pose` with identifiable per-joint values, then:
+   - For each `model_type`, construct `packed_pose` with identifiable per-joint values, then:
      - `get_joint_pose(name)` returns expected `(B, 1, 3)` values and `None` for unsupported joints.
      - `set_joint_pose(name, new_value)` updates only that joint; gradients remain intact for unrelated parts.
      - `to_dict()` returns views: modifying `d[name][...]` changes `named_pose.packed_pose` accordingly.
@@ -103,10 +104,12 @@
 
 ## Joint Index Mapping (source of truth)
 
-- Reuse the ordered joint lists currently hard-coded in `PoseByKeypoints.to_smpl_pose/to_smplh_pose/to_smplx_pose` to build name→index dicts:
-  - SMPL order: `root` + [left_hip, right_hip, spine1, left_knee, right_knee, spine2, left_ankle, right_ankle, spine3, left_foot, right_foot, neck, left_collar, right_collar, head, left_shoulder, right_shoulder, left_elbow, right_elbow, left_wrist, right_wrist]
-  - SMPL-H adds 15 left-hand joints then 15 right-hand joints (same names as current code).
-  - SMPL-X inserts face before hands: `jaw`, `left_eye`, `right_eye`, then the hands.
+- Use the explicit enums and mappings in `src/smplx_toolbox/core/constants.py`:
+  - `ModelType` — model kind selector (`SMPL`, `SMPLH`, `SMPLX`).
+  - `get_joint_index(joint_name: str, model_type: ModelType | str) -> int` — authoritative name→index.
+  - `SMPL_JOINT_NAME_TO_INDEX`, `SMPLH_JOINT_NAME_TO_INDEX`, `SMPLX_JOINT_NAME_TO_INDEX` — explicit ordered mappings.
+  - `ModelType.get_joint_names()` — returns ordered names per model type.
+  - This removes reliance on any legacy hard-coded lists in `PoseByKeypoints`.
 
 ## Coding Standards
 
@@ -130,6 +133,7 @@
 - All public APIs accept packed poses directly; no usage of `PoseByKeypoints` in forward paths.
 - Unit tests cover `NamedPose` get/set, `to_dict` view semantics, and unsupported-joint behavior across variants.
 - Documentation/examples no longer reference `PoseByKeypoints` for inputs.
+- `NamedPose` uses `ModelType` (from `core.constants`) for model selection and constants’ mappings for joint indices.
 
 ## Timeline (indicative)
 
@@ -137,9 +141,9 @@
 - Day 2: Update call sites and tests to packed poses; remove `from_keypoint_pose`.
 - Day 3: Delete `PoseByKeypoints`, finalize docs.
 
-## Open Questions
+## Decisions
 
-- Do we want an optional `from_flattened(packed_flat: (B, N*3))` helper? (Not strictly necessary.)
-- Should `set_joint_pose` accept `(B, 3)` and reshape internally? (Plan: yes, with clear error messages.)
-- Should `batch_size` be explicit when `packed_pose` is omitted, or infer from another field? (Plan: add `batch_size: int = 1`.)
-- Any additional joint aliases beyond eye names required for downstream compatibility?
+- No `from_flattened(...)` helper. Users set `packed_pose` explicitly and are responsible for correct shape `(B, N, 3)` and dtype/device.
+- `set_joint_pose` accepts `(B, 3)` and reshapes to `(B, 1, 3)` automatically. This behavior must be noted in the docstring.
+- `batch_size` default of `1` is kept. Provide `repeat(n: int)` to expand the batch to `B * n` in-place for convenience.
+- Getters that take a joint name return `None` if the name is not recognized for the current `model_type`. Setters raise a `KeyError` for unknown names.

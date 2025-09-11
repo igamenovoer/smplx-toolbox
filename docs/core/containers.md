@@ -8,15 +8,14 @@ Segmented axis‑angle inputs (root/body/hands/face) plus shape/expr/translation
 
 ::: smplx_toolbox.core.containers.UnifiedSmplInputs
 
-## PoseByKeypoints
+## NamedPose
 
-Per‑joint axis‑angle by name (e.g., `left_shoulder`, `jaw`). Convenient for specifying partial poses. Automatically converted to segments via `UnifiedSmplInputs.from_keypoint_pose`.
+A lightweight utility for inspecting and editing packed axis‑angle poses `(B, N, 3)` by joint name, using the model type’s joint namespace.
 
-::: smplx_toolbox.core.containers.PoseByKeypoints
+::: smplx_toolbox.core.containers.NamedPose
 
 ## UnifiedSmplOutput
 
 Unified outputs (vertices, faces, joints in SMPL‑X 55‑joint layout, flattened full pose used in LBS) plus an `extras` dict with raw joints and mappings.
 
 ::: smplx_toolbox.core.containers.UnifiedSmplOutput
-

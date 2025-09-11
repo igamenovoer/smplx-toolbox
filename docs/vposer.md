@@ -14,18 +14,18 @@ Body Pose Mapping (21 joints)
 
 Interop Helpers
 - In `smplx_toolbox.vposer.model.VPoserModel`:
-  - `convert_struct_to_pose(kpts: PoseByKeypoints) -> Tensor`
-    - Builds `(B, 63)` body AA from a `PoseByKeypoints` using the mapping above. Missing joints are zero‑filled.
-  - `convert_pose_to_struct(pose_body: Tensor) -> PoseByKeypoints`
-    - Converts `(B, 63)` or `(B, 21, 3)` body AA back to a `PoseByKeypoints` with only body joints populated.
+  - `convert_named_pose_to_pose_body(npz: NamedPose) -> Tensor`
+    - Builds `(B, 63)` body AA from a `NamedPose` using the mapping above. Missing joints are zero‑filled.
+  - `convert_pose_body_to_named_pose(pose_body: Tensor) -> NamedPose`
+    - Converts `(B, 63)` or `(B, 21, 3)` body AA back to a `NamedPose` with body joints populated (SMPL namespace).
 
 Encoding/Decoding with VPoser
 ```python
 from smplx_toolbox.vposer.model import VPoserModel
 from smplx_toolbox.optimization import VPoserPriorLossBuilder
 
-# Build body AA from PoseByKeypoints
-pose_body = VPoserModel.convert_struct_to_pose(kpts)  # (B, 63)
+# Build body AA from a NamedPose
+pose_body = VPoserModel.convert_named_pose_to_pose_body(npz)  # (B, 63)
 
 # Encode to latent (uses mean of posterior)
 vp_builder = VPoserPriorLossBuilder.from_vposer(model, vposer)
@@ -34,8 +34,8 @@ z = vp_builder.encode_pose_to_latent(pose_body)
 # Decode back to pose AA (B, 21, 3)
 pose_out = vp_builder.decode_latent_to_pose(z)
 
-# Convert to PoseByKeypoints for inspection
-kpts_out = VPoserModel.convert_pose_to_struct(pose_out)
+# Convert to NamedPose for inspection (SMPL namespace)
+npz_out = VPoserModel.convert_pose_body_to_named_pose(pose_out)
 ```
 
 Tips

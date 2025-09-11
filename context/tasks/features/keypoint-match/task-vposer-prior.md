@@ -66,3 +66,11 @@ Notes
 References
 - VPoser implementation: `context/refcode/human_body_prior/src/human_body_prior/models/vposer_model.py`
 - SMPLify‑X usage: `context/refcode/smplify-x/smplifyx/fitting.py`, `context/refcode/smplify-x/smplifyx/fit_single_frame.py`
+## Note: PoseByKeypoints Status (Outdated)
+
+- PoseByKeypoints has been refactored out of the codebase and is no longer supported in new APIs.
+- Use UnifiedSmplInputs for providing segmented pose tensors and NamedPose for optional inspection/editing of packed `(B, N, 3)` poses.
+- VPoser interop now uses:
+  - `VPoserModel.convert_named_pose_to_pose_body(npz: NamedPose) -> Tensor`
+  - `VPoserModel.convert_pose_body_to_named_pose(pose_body: Tensor) -> NamedPose`
+- This document is kept for archival purposes; design details reflect an earlier iteration.

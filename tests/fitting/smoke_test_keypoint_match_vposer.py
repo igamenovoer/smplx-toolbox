@@ -35,6 +35,7 @@ from smplx_toolbox.optimization import (
 )
 from smplx_toolbox.vposer import load_vposer
 from smplx_toolbox.visualization import SMPLVisualizer, add_connection_lines
+from smplx_toolbox.utils import select_device
 
 
 class Params:
@@ -68,12 +69,8 @@ class Params:
 
 
 def _select_device() -> torch.device:
-    """Pick CUDA or MPS if available; otherwise CPU."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
+    """Project-wide device selection (OS-aware)."""
+    return select_device()
 
 
 def _movable_joint_names() -> list[str]:
