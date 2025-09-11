@@ -15,7 +15,6 @@ Notes
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from typing import Any
 
 import numpy as np
@@ -24,11 +23,8 @@ import smplx
 
 pv.set_jupyter_backend('client')  # Prefer client-side rendering in Jupyter
 
-# Ensure the project root (containing the `src` directory) is on sys.path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
-from src.smplx_toolbox.visualization import SMPLVisualizer, add_axes
+from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
+from smplx_toolbox.visualization import SMPLVisualizer, add_axes
 
 print("[smoke] SMPL-X wireframe + skeleton visualization")
 

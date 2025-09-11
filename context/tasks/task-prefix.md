@@ -104,3 +104,4 @@ SMPL-X: A unified model for expressive body, face, and hands
 Data storage directory:
 - **body_models/**: SMPL-X model files (.pkl format)
 - Model downloads and preprocessing artifacts
+- **vposer/**: VPoser model files `vposer-v2.ckpt` for v2 vposer model checkpoint.

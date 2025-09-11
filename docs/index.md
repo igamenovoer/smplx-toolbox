@@ -33,7 +33,6 @@ This documentation is built with Material for MkDocs.
 
 - `src/smplx_toolbox/core/` – unified model, adapters, containers, constants
 - `src/smplx_toolbox/utils/` – utilities (placeholder)
-- `src/smplx_toolbox/visualization/` – visualization helpers (placeholder)
+- `src/smplx_toolbox/visualization/` – visualization helpers (PyVista-based)
 
 See Installation and Usage for environment setup and examples.
-

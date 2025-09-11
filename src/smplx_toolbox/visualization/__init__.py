@@ -62,6 +62,7 @@ from .plotter import SMPLVisualizer
 from .utils import (
     create_polydata_from_vertices_faces,
     add_axes,
+    add_connection_lines,
     get_smpl_bone_connections,
     get_smplh_bone_connections,
     get_smplx_bone_connections,
@@ -78,6 +79,7 @@ __all__ = [
     "get_smplh_bone_connections",
     "get_smplx_bone_connections",
     "add_axes",
+    "add_connection_lines",
     "create_polydata_from_vertices_faces",
     "resolve_joint_selection",
 ]

@@ -13,3 +13,7 @@
 	path = context/refcode/human_body_prior
 	url = https://github.com/nghorbani/human_body_prior.git
 	branch = master
+[submodule "context/refcode/igpy"]
+	path = context/refcode/igpy
+	url = git@github.com:igamenovoer/igpy.git
+	branch = main

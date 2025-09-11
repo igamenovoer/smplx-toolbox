@@ -48,6 +48,10 @@ nav:
   - Overview: index.md
   - Installation: installation.md
   - Usage: usage.md
+  - Visualization:
+      - Overview: visualization/index.md
+      - SMPL Visualizer: visualization/visualizer.md
+      - Utilities: visualization/utils.md
   - Core:
       - Unified Model: core/unified_model.md
       - Data Containers: core/containers.md

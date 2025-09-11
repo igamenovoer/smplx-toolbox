@@ -9,6 +9,7 @@ get_smpl_bone_connections : Get SMPL skeleton bone connections
 get_smplh_bone_connections : Get SMPL-H skeleton bone connections
 get_smplx_bone_connections : Get SMPL-X skeleton bone connections
 create_polydata_from_vertices_faces : Convert vertices and faces to PyVista PolyData
+add_connection_lines : Add line segments connecting two sets of points
 resolve_joint_selection : Resolve joint selection to indices
 """
 
@@ -29,6 +30,77 @@ from smplx_toolbox.core.constants import (
     SMPLH_JOINT_NAME_TO_INDEX,
     SMPLX_JOINT_NAME_TO_INDEX,
 )
+
+
+def add_connection_lines(
+    plotter: pv.Plotter | Any,
+    points_a: np.ndarray | Sequence[Sequence[float]],
+    points_b: np.ndarray | Sequence[Sequence[float]],
+    *,
+    color: tuple[float, float, float] | np.ndarray = (1.0, 0.0, 0.0),
+    line_width: int = 2,
+    opacity: float = 1.0,
+) -> Any:
+    """Add per-pair connection lines between two point sets to a PyVista plotter.
+
+    Given two equally-sized sets of points ``A`` and ``B`` of shape ``(N, 3)``,
+    this function draws ``N`` independent line segments connecting ``A[i]`` to
+    ``B[i]``. All segments share the same color and style.
+
+    Parameters
+    ----------
+    plotter : pv.Plotter or BackgroundPlotter
+        The PyVista plotter to add the lines to.
+    points_a : array-like, shape (N, 3)
+        First set of 3D points.
+    points_b : array-like, shape (N, 3)
+        Second set of 3D points; must have the same number of points as
+        ``points_a``.
+    color : tuple of float or ndarray, optional
+        RGB color in 0–1 range for all line segments. Defaults to red.
+    line_width : int, optional
+        Line width in screen pixels. Defaults to 2.
+    opacity : float, optional
+        Opacity in 0–1 range. Defaults to 1.0 (opaque).
+
+    Returns
+    -------
+    Any
+        The actor handle returned by ``plotter.add_mesh``.
+    """
+    a = np.asarray(points_a, dtype=float)
+    b = np.asarray(points_b, dtype=float)
+    if a.ndim != 2 or a.shape[1] != 3:
+        raise ValueError("points_a must have shape (N, 3)")
+    if b.ndim != 2 or b.shape[1] != 3:
+        raise ValueError("points_b must have shape (N, 3)")
+    if a.shape[0] != b.shape[0]:
+        raise ValueError(
+            f"points_a and points_b must have the same number of points; got {a.shape[0]} and {b.shape[0]}"
+        )
+
+    n = int(a.shape[0])
+    if n == 0:
+        # Nothing to draw; return None for convenience
+        return None
+
+    # Interleave points to keep per-pair indices contiguous: [A0, B0, A1, B1, ...]
+    pts = np.empty((2 * n, 3), dtype=float)
+    pts[0::2] = a
+    pts[1::2] = b
+
+    # VTK polyline connectivity for independent segments: [2, i0, i1] per segment
+    lines = np.empty((n, 3), dtype=np.int64)
+    for i in range(n):
+        lines[i, 0] = 2
+        lines[i, 1] = 2 * i
+        lines[i, 2] = 2 * i + 1
+
+    poly = pv.PolyData(pts)
+    poly.lines = lines.ravel()
+
+    actor = plotter.add_mesh(poly, color=color, line_width=line_width, opacity=float(opacity))
+    return actor
 
 
 def add_axes(

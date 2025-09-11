@@ -54,8 +54,11 @@ Pending next
   - [x] Convert models to Trimesh format for visualization and processing.
 - [ ] **Text2Motion Conversion:**
   - [ ] Convert text2motion skeletons to SMPL-H models.
-- [ ] **Visualization:**
-  - [ ] Visualize SMPL-X and SMPL-H models.
+- [x] **Visualization:**
+  - [x] Visualize SMPL-X and SMPL-H models (PyVista)
+  - [x] SMPL-specific visualizer (`SMPLVisualizer`) with mesh, joints, skeleton
+  - [x] Joints labeling and axis overlays (`add_axes`)
+  - [x] Manual smoke script under `tests/smoke_test_show_mesh.py`
 
 ### Round 2: Advanced Features
 
