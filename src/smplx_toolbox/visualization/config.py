@@ -34,7 +34,7 @@ class VisualizationConfig:
 
     >>> # Customize colors
     >>> config = VisualizationConfig()
-    >>> config.m_mesh_color = (1.0, 0.5, 0.5)
+    >>> config.set_mesh_color((1.0, 0.5, 0.5))
     """
 
     def __init__(self) -> None:
@@ -80,3 +80,49 @@ class VisualizationConfig:
             RGB color values in range [0, 1]
         """
         return self.m_bone_color
+
+    def set_mesh_color(self, color: tuple[float, float, float]) -> None:
+        """Set the default mesh color.
+
+        Parameters
+        ----------
+        color : tuple of float
+            RGB color values in range [0, 1].
+        """
+        self._validate_rgb(color)
+        self.m_mesh_color = color
+
+    def set_joint_color(self, color: tuple[float, float, float]) -> None:
+        """Set the default joint color.
+
+        Parameters
+        ----------
+        color : tuple of float
+            RGB color values in range [0, 1].
+        """
+        self._validate_rgb(color)
+        self.m_joint_color = color
+
+    def set_bone_color(self, color: tuple[float, float, float]) -> None:
+        """Set the default bone/skeleton color.
+
+        Parameters
+        ----------
+        color : tuple of float
+            RGB color values in range [0, 1].
+        """
+        self._validate_rgb(color)
+        self.m_bone_color = color
+
+    @staticmethod
+    def _validate_rgb(color: tuple[float, float, float]) -> None:
+        """Validate an RGB color tuple has three floats in [0, 1]."""
+        if (
+            not isinstance(color, tuple)
+            or len(color) != 3
+            or any((not isinstance(c, (int, float))) for c in color)
+            or any((c < 0 or c > 1) for c in color)
+        ):
+            raise ValueError(
+                "Color must be a tuple of three floats in range [0, 1]."
+            )

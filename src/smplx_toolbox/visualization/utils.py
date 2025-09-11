@@ -14,7 +14,7 @@ resolve_joint_selection : Resolve joint selection to indices
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import pyvista as pv
@@ -29,6 +29,119 @@ from smplx_toolbox.core.constants import (
     SMPLH_JOINT_NAME_TO_INDEX,
     SMPLX_JOINT_NAME_TO_INDEX,
 )
+
+
+def add_axes(
+    plotter: pv.Plotter | Any,
+    origins: np.ndarray | Sequence[float] | Sequence[Sequence[float]],
+    *,
+    scale: float = 0.1,
+    as_arrows: bool = False,
+    line_width: int = 2,
+    labels: bool = False,
+    label_font_size: int = 10,
+    label_prefix: str | None = None,
+) -> dict[str, Any]:
+    """Add XYZ axes at one or more origins to a PyVista plotter.
+
+    Draws red (X), green (Y), and blue (Z) axes at the specified origin(s)
+    using either line segments or arrows. Optionally adds axis labels.
+
+    Parameters
+    ----------
+    plotter : pv.Plotter or BackgroundPlotter
+        The PyVista plotter to add the axes to.
+    origins : array-like
+        Either a single origin of shape (3,) or an array of shape (N, 3)
+        specifying multiple origins.
+    scale : float, optional
+        Length of each axis segment (default is 0.1).
+    as_arrows : bool, optional
+        If True, render each axis as an arrow; otherwise as a line (default: False).
+    line_width : int, optional
+        Line width for line rendering (ignored for arrows).
+    labels : bool, optional
+        Whether to add axis labels near the positive ends (default: False).
+    label_font_size : int, optional
+        Font size for labels when `labels=True`.
+    label_prefix : str, optional
+        Optional prefix for labels when rendering multiple origins; if provided,
+        labels become f"{label_prefix}{i}:X/Y/Z" for the i-th origin.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with actor handles for 'x', 'y', 'z' (each a list), and
+        optionally 'labels' when labels=True.
+    """
+    arr = np.asarray(origins, dtype=float)
+    if arr.ndim == 1:
+        if arr.shape[0] != 3:
+            raise ValueError("Single origin must have shape (3,)")
+        arr = arr.reshape(1, 3)
+    elif arr.ndim != 2 or arr.shape[1] != 3:
+        raise ValueError("origins must be of shape (3,) or (N, 3)")
+
+    x_dir = np.array([1.0, 0.0, 0.0], dtype=float)
+    y_dir = np.array([0.0, 1.0, 0.0], dtype=float)
+    z_dir = np.array([0.0, 0.0, 1.0], dtype=float)
+
+    actors_x: list[Any] = []
+    actors_y: list[Any] = []
+    actors_z: list[Any] = []
+
+    label_points: list[np.ndarray] = []
+    label_texts: list[str | int] = []
+
+    for i, origin in enumerate(arr):
+        o = np.asarray(origin, dtype=float)
+        # Endpoints
+        px = o + scale * x_dir
+        py = o + scale * y_dir
+        pz = o + scale * z_dir
+
+        if as_arrows:
+            ax_x = pv.Arrow(start=o, direction=x_dir, tip_length=0.25 * scale, tip_radius=0.1 * scale, shaft_radius=0.03 * scale)
+            ax_y = pv.Arrow(start=o, direction=y_dir, tip_length=0.25 * scale, tip_radius=0.1 * scale, shaft_radius=0.03 * scale)
+            ax_z = pv.Arrow(start=o, direction=z_dir, tip_length=0.25 * scale, tip_radius=0.1 * scale, shaft_radius=0.03 * scale)
+        else:
+            ax_x = pv.Line(o, px)
+            ax_y = pv.Line(o, py)
+            ax_z = pv.Line(o, pz)
+
+        actors_x.append(plotter.add_mesh(ax_x, color=(1.0, 0.0, 0.0), line_width=line_width))
+        actors_y.append(plotter.add_mesh(ax_y, color=(0.0, 1.0, 0.0), line_width=line_width))
+        actors_z.append(plotter.add_mesh(ax_z, color=(0.0, 0.0, 1.0), line_width=line_width))
+
+        if labels:
+            prefix = f"{label_prefix}{i}:" if label_prefix is not None else ""
+            label_points.extend([px, py, pz])
+            label_texts.extend([f"{prefix}X", f"{prefix}Y", f"{prefix}Z"])
+
+    result: dict[str, Any] = {"x": actors_x, "y": actors_y, "z": actors_z}
+
+    if labels and label_points:
+        pts = np.asarray(label_points, dtype=float)
+        try:
+            lbl_actor = plotter.add_point_labels(
+                pts,
+                label_texts,
+                font_size=label_font_size,
+                point_size=0,
+                shape_opacity=0,
+                always_visible=True,
+            )
+        except TypeError:
+            lbl_actor = plotter.add_point_labels(
+                pts,
+                label_texts,
+                font_size=label_font_size,
+                point_size=0,
+                shape_opacity=0,
+            )
+        result["labels"] = lbl_actor
+
+    return result
 
 
 def get_smpl_bone_connections() -> list[tuple[int, int]]:
@@ -339,19 +452,19 @@ def create_polydata_from_vertices_faces(
 
     # Convert faces to PyVista format
     # PyVista expects: [n_verts, v0, v1, v2, n_verts, v0, v1, v2, ...]
-    faces = np.asarray(faces, dtype=np.int32)
+    faces = np.asarray(faces)
 
     if faces.ndim == 2:
         n_faces, n_verts_per_face = faces.shape
         # Add the count column
-        pv_faces = np.empty((n_faces, n_verts_per_face + 1), dtype=np.int32)
+        pv_faces = np.empty((n_faces, n_verts_per_face + 1), dtype=np.int_)
         pv_faces[:, 0] = n_verts_per_face
-        pv_faces[:, 1:] = faces
-        # Flatten for PyVista
-        pv_faces = pv_faces.ravel()
+        pv_faces[:, 1:] = faces.astype(np.int_, copy=False)
+        # Flatten for PyVista and ensure contiguous
+        pv_faces = np.ascontiguousarray(pv_faces.ravel(order="C"), dtype=np.int_)
     else:
-        # Assume already in PyVista format
-        pv_faces = faces
+        # Assume already in PyVista format; ensure dtype/contiguity
+        pv_faces = np.ascontiguousarray(faces, dtype=np.int_)
 
     # Create PolyData
     mesh = pv.PolyData(vertices, pv_faces)

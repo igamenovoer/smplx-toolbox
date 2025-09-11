@@ -77,6 +77,10 @@ class SMPLVisualizer:
         self.m_model: UnifiedSmplModel | None = None
         self.m_config: VisualizationConfig | None = None
 
+    # Note: We intentionally do not auto-detect Jupyter here. The default
+    # plotter is always `pyvista.Plotter`. Users can opt into a background
+    # plotter by passing `background=True` to `from_model`.
+
     @property
     def plotter(self) -> pv.Plotter | Any | None:
         """Get the PyVista plotter instance (regular or BackgroundPlotter).
@@ -163,10 +167,13 @@ class SMPLVisualizer:
         if plotter is not None:
             instance.set_plotter(plotter)
         else:
-            if background:
+            # Default to regular PyVista plotter. Use background plotter only
+            # when explicitly requested by the user via `background=True`.
+            use_background = background
+            if use_background:
                 # Try to import pyvistaqt for background plotter
                 try:
-                    import pyvistaqt as pvqt
+                    import pyvistaqt as pvqt  # type: ignore[import-untyped]
 
                     instance.m_plotter = pvqt.BackgroundPlotter()
                 except ImportError:
@@ -183,19 +190,31 @@ class SMPLVisualizer:
 
         return instance
 
-    def add_mesh(self, output: UnifiedSmplOutput | None = None, **kwargs: Any) -> Any:
+    def add_mesh(
+        self,
+        output: UnifiedSmplOutput | None = None,
+        *,
+        style: str | None = None,
+        color: tuple[float, float, float] | np.ndarray | None = None,
+        opacity: float | None = None,
+        **kwargs: Any,
+    ) -> Any:
         """Add SMPL mesh to the plotter.
 
         Parameters
         ----------
         output : UnifiedSmplOutput, optional
             Model output. If None, generates from current model with default pose.
+        style : str, optional
+            PyVista mesh drawing style: one of {'surface', 'wireframe', 'points'}.
+        color : tuple of float or numpy.ndarray, optional
+            RGB color with components in [0, 1]. If not provided, uses
+            `VisualizationConfig.mesh_color`.
+        opacity : float, optional
+            Mesh opacity in [0, 1].
         **kwargs
-            Arguments passed to plotter.add_mesh() like:
-            - style: 'surface', 'wireframe', 'points'
-            - color: color name or RGB tuple
-            - opacity: 0-1 float
-            - show_edges: bool
+            Additional arguments passed to `plotter.add_mesh()` (e.g.,
+            `show_edges`, `specular`, `ambient`, etc.).
 
         Returns
         -------
@@ -230,21 +249,58 @@ class SMPLVisualizer:
         if isinstance(output.vertices, torch.Tensor):
             vertices = output.vertices[0].detach().cpu().numpy()  # Take first batch
         else:
-            vertices = np.asarray(output.vertices)
+            vertices = np.asarray(output.vertices)  # type: ignore[unreachable]
             if vertices.ndim == 3:
                 vertices = vertices[0]  # Take first batch
 
         if isinstance(output.faces, torch.Tensor):
             faces = output.faces.detach().cpu().numpy()
         else:
-            faces = np.asarray(output.faces)
+            faces = np.asarray(output.faces)  # type: ignore[unreachable]
 
         # Create PyVista mesh
         mesh = create_polydata_from_vertices_faces(vertices, faces)
 
-        # Set default color if not provided
-        if "color" not in kwargs and self.m_config is not None:
-            kwargs["color"] = self.m_config.mesh_color
+        # Validate and apply explicit parameters
+        if style is not None:
+            allowed_styles = {"surface", "wireframe", "points"}
+            if style not in allowed_styles:
+                raise ValueError(
+                    f"Invalid style '{style}'. Expected one of {sorted(allowed_styles)}"
+                )
+            kwargs["style"] = style
+
+        if opacity is not None:
+            if not (0.0 <= opacity <= 1.0):
+                raise ValueError("opacity must be in [0, 1]")
+            kwargs["opacity"] = opacity
+
+        # Handle color precedence: parameter > kwargs > config default
+        applied_color: tuple[float, float, float] | np.ndarray | None = None
+        if color is not None:
+            # Validate tuple rgb
+            if isinstance(color, tuple):
+                VisualizationConfig._validate_rgb(color)
+                applied_color = color
+            else:
+                # numpy color
+                arr = np.asarray(color, dtype=float)
+                if arr.shape == (3,):
+                    if (arr < 0).any() or (arr > 1).any():
+                        raise ValueError("color array values must be in [0, 1]")
+                    applied_color = arr
+                else:
+                    raise ValueError(
+                        "color ndarray must have shape (3,) with values in [0, 1]"
+                    )
+        elif "color" in kwargs:
+            # Trust user-provided color in kwargs
+            applied_color = kwargs["color"]
+        elif self.m_config is not None:
+            applied_color = self.m_config.mesh_color
+
+        if applied_color is not None:
+            kwargs["color"] = applied_color
 
         # Add to plotter
         actor = self.m_plotter.add_mesh(mesh, **kwargs)
@@ -273,7 +329,9 @@ class SMPLVisualizer:
             - List of joint indices (model-specific, see skeleton mapping)
             Special keywords as list elements: 'body' (core 22), 'hands' (fingers), 'face', 'all'
         size : float, optional
-            Joint sphere size (default: 0.02)
+            Approximate joint point size scale (default: 0.02).
+            Internally mapped to a screen-space ``point_size`` in pixels
+            and rendered as spheres for clearer appearance.
         color : str or tuple, optional
             Joint color (default: red)
         labels : bool, optional
@@ -329,7 +387,7 @@ class SMPLVisualizer:
         if isinstance(output.joints, torch.Tensor):
             all_joints = output.joints[0].detach().cpu().numpy()  # Take first batch
         else:
-            all_joints = np.asarray(output.joints)
+            all_joints = np.asarray(output.joints)  # type: ignore[unreachable]
             if all_joints.ndim == 3:
                 all_joints = all_joints[0]  # Take first batch
 
@@ -341,9 +399,12 @@ class SMPLVisualizer:
             color = self.m_config.joint_color
 
         # Add points
-        kwargs["point_size"] = (
-            size * 1000
-        )  # PyVista expects point_size in different scale
+        # Map the provided size to a reasonable pixel size for visibility
+        # and render as spheres by default for clearer appearance.
+        if "render_points_as_spheres" not in kwargs:
+            kwargs["render_points_as_spheres"] = True
+        point_size_px = max(1, int(round(size * 1000)))
+        kwargs["point_size"] = point_size_px
         points_actor = self.m_plotter.add_points(selected_joints, color=color, **kwargs)
 
         result = {"points": points_actor}
@@ -371,13 +432,25 @@ class SMPLVisualizer:
             ]
 
             # Add labels
-            labels_actor = self.m_plotter.add_point_labels(
-                selected_joints,
-                joint_labels,
-                font_size=label_font_size,
-                point_size=0,  # Don't show points again
-                shape_opacity=0,  # Hide label background
-            )
+            # Some PyVista versions support `always_visible` to keep labels
+            # rendered regardless of occlusion. Prefer it when available.
+            try:
+                labels_actor = self.m_plotter.add_point_labels(
+                    selected_joints,
+                    joint_labels,
+                    font_size=label_font_size,
+                    point_size=0,  # Don't show points again
+                    shape_opacity=0,  # Hide label background
+                    always_visible=True,
+                )
+            except TypeError:
+                labels_actor = self.m_plotter.add_point_labels(
+                    selected_joints,
+                    joint_labels,
+                    font_size=label_font_size,
+                    point_size=0,  # Don't show points again
+                    shape_opacity=0,  # Hide label background
+                )
             result["labels"] = labels_actor
 
         return result
@@ -458,7 +531,7 @@ class SMPLVisualizer:
         if isinstance(output.joints, torch.Tensor):
             joints = output.joints[0].detach().cpu().numpy()  # Take first batch
         else:
-            joints = np.asarray(output.joints)
+            joints = np.asarray(output.joints)  # type: ignore[unreachable]
             if joints.ndim == 3:
                 joints = joints[0]  # Take first batch
 
@@ -468,17 +541,17 @@ class SMPLVisualizer:
 
         if as_lines:
             # Create lines for fast rendering
-            lines = []
+            lines: list[list[int]] = []
             for parent_idx, child_idx in connections:
                 # Check if indices are valid for the model
                 if parent_idx < len(joints) and child_idx < len(joints):
-                    lines.append([2, parent_idx, child_idx])
+                    lines.append([2, int(parent_idx), int(child_idx)])
 
             if lines:
                 # Create line polydata
-                lines_array = np.hstack(lines)
+                lines_array = np.asarray(lines, dtype=np.int_).ravel(order="C")
                 skeleton_mesh = pv.PolyData(joints)
-                skeleton_mesh.lines = lines_array
+                skeleton_mesh.lines = lines_array  # type: ignore[assignment]
 
                 # Add as lines
                 if "line_width" not in kwargs:
