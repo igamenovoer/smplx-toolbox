@@ -4,27 +4,23 @@ The unified pipeline uses typed containers to make inputs/outputs explicit and s
 
 ## UnifiedSmplInputs
 
-Holds a single `NamedPose` as the preferred source of pose truth and derives
-SMPL/SMPL‑H/SMPL‑X kwargs from it. You can inspect/edit joint AAs via
+Holds a single `NamedPose` as the preferred source of intrinsic pose (pelvis excluded)
+and derives SMPL/SMPL‑H/SMPL‑X kwargs from it. You can inspect/edit joint AAs via
 `named_pose.packed_pose` and convenience getters/setters on `NamedPose`.
 
-Legacy segmented fields (`root_orient`, `pose_body`, `left/right_hand_pose`,
-`pose_jaw`, `left/right_eye_pose`) are still accepted for backward
-compatibility but are deprecated. When `named_pose` is provided, these fields
-are ignored. Missing segments are zero‑filled as needed for the target model.
+Segmented pose fields have been removed. Provide global orientation separately via
+`global_orient: (B, 3)`. Missing segments are zero‑filled as needed for the target model.
 
 Orientation
-- Use `inputs.global_orient` to access the `(B, 3)` global orientation; when
-  `named_pose` is set, this is a view of the pelvis joint axis‑angle from the
-  packed pose. Prefer editing via `npz.root_orient` or
-  `npz.set_joint_pose_value('pelvis', ...)` for clarity and gradient safety.
-  The legacy `root_orient` field is deprecated.
+- Use `inputs.global_orient` for the `(B, 3)` global orientation (pelvis). `NamedPose`
+  stores intrinsic joints only and excludes pelvis by design.
 
 ::: smplx_toolbox.core.containers.UnifiedSmplInputs
 
 ## NamedPose
 
-A lightweight utility for inspecting and editing packed axis‑angle poses `(B, N, 3)` by joint name, using the model type’s joint namespace.
+A lightweight utility for inspecting and editing intrinsic axis‑angle poses `(B, N, 3)`
+by joint name (pelvis excluded), using the model type’s joint namespace.
 
 Key conversion helper
 - `to_model_type(smpl_type, copy=False) -> NamedPose`
@@ -34,8 +30,10 @@ Key conversion helper
 
 ::: smplx_toolbox.core.containers.NamedPose
 
-Also provides convenient views:
-- `root_orient` – `(B, 3)` view of the pelvis joint AA (global orientation).
+Additional notes and helpers
+- `to_dict(with_pelvis: bool = False)` excludes pelvis by default; when set, includes a zero‑AA pelvis entry.
+- `pelvis` property returns zero AA `(B, 3)` for convenience when constructing full poses for LBS.
+- Getters/setters for `'pelvis'` raise `KeyError` to emphasize it is not part of the intrinsic pose.
 
 ## UnifiedSmplOutput
 

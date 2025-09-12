@@ -18,9 +18,10 @@ base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use
 # 2) Wrap it
 model = UnifiedSmplModel.from_smpl_model(base)
 
-# 3) Prepare pose via NamedPose (preferred)
+# 3) Prepare pose via NamedPose (preferred). NamedPose stores intrinsic joints only (no pelvis).
 npz = NamedPose(model_type=ModelType.SMPLX, batch_size=1)
-inputs = UnifiedSmplInputs(named_pose=npz)
+# Provide pelvis/global orientation separately (defaults to zeros if omitted)
+inputs = UnifiedSmplInputs(named_pose=npz, global_orient=torch.zeros(1, 3))
 
 # 4) Forward
 out = model(inputs)

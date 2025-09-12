@@ -18,9 +18,15 @@ To become the go-to toolkit for researchers, developers, and artists working wit
 
 **Iterative Development:** The library is developed in an iterative manner, with each round touching on all aspects of the functional requirements. This approach ensures that the library is continuously improving and that new features are added in a structured and organized way.
 
-## Currently Working
+## Next Step (Priority)
 
-Keypoint-Based Fitting (implemented; pending validation on real data)
+- Develop the Keypoint Fitting Helper to orchestrate end-to-end fitting flows
+  (configuration, scheduling, losses, priors, logging). See the design:
+  `context/tasks/features/fitting-helper/design-of-fitting-helper.md`.
+
+## Currently Working / Recent Changes
+
+Keypoint-Based Fitting (in place; refactors completed, validate on real data next)
 - [x] Loss builders (under `src/smplx_toolbox/optimization/`)
   - [x] `KeypointMatchLossBuilder` (3D, unified names + packed native order)
   - [x] `ProjectedKeypointMatchLossBuilder` (2D via camera projection)
@@ -34,11 +40,21 @@ Keypoint-Based Fitting (implemented; pending validation on real data)
 - [x] Unified model exposes `extras['betas']` for shape prior
 - [x] VPoser runtime + interop helpers
   - [x] Minimal `VPoserModel` (v2‑compatible) encode/decode
-  - [x] `convert_struct_to_pose(PoseByKeypoints) -> (B,63)`
-  - [x] `convert_pose_to_struct((B,63)/(B,21,3)) -> PoseByKeypoints`
+  - [x] `convert_named_pose_to_pose_body(npz) -> (B,63)` and back
 - [x] Documentation
   - [x] `context/tasks/features/keypoint-match/task-vposer-prior.md` (single source of truth)
   - [x] `docs/vposer.md` (runtime usage and mapping helpers)
+
+Model Input Refactor
+- [x] Introduced `NamedPose` as the single intrinsic pose source (pelvis excluded)
+- [x] Separated `global_orient` as a standalone `(B, 3)` input
+- [x] Removed segmented pose fields from `UnifiedSmplInputs` (root_orient/pose_body/hands/face)
+- [x] Updated examples/docs to NamedPose-first pattern; clarified VPoser vs global_orient separation
+- [x] Smoke tests refactored to optimize `NamedPose.packed_pose` + `global_orient`; excluded global_orient from L2 reg
+
+Hints
+- [x] Added guidance: applying VPoser without affecting global orientation
+      (`context/hints/smplx-kb/howto-apply-vposer-with-global-orient.md`)
 
 Pending next
 - [ ] Validate on real 2D/3D detections and full optimization schedules
@@ -64,8 +80,8 @@ Pending next
 
 - [ ] **Model Conversion:**
   - [ ] Convert SMPL-H models to SMPL-X for both static and animated models.
-- [ ] **Keypoint Fitting:**
-  - [ ] Develop keypoint fitting for all SMPL model variants (SMPL, SMPL-H, SMPL-X) optimization.
+- [ ] **Keypoint Fitting Helper:**
+  - [ ] Implement the fitting helper component to manage schedules (stages, weights), priors (VPoser/shape/angle), robustifiers, and output artifacts (logs/meshes). See `context/tasks/features/fitting-helper/design-of-fitting-helper.md`.
 - [ ] **Animation:**
   - [ ] Define animation format for SMPL-H and SMPL-X.
   - [ ] Convert animation to and from BVH format.

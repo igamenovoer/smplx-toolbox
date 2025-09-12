@@ -20,8 +20,8 @@ from smplx_toolbox.core.constants import ModelType
 base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use_pca=False)
 umodel = UnifiedSmplModel.from_smpl_model(base)
 
-npz = NamedPose(model_type=ModelType.SMPLX, batch_size=1)
-inputs = UnifiedSmplInputs(named_pose=npz)
+npz = NamedPose(model_type=ModelType.SMPLX, batch_size=1)  # intrinsic pose only (no pelvis)
+inputs = UnifiedSmplInputs(named_pose=npz, global_orient=torch.zeros(1, 3))  # pelvis AA (optional; defaults to zeros)
 out = umodel(inputs)
 print(out.vertices.shape, out.joints.shape, umodel.model_type)
 ```

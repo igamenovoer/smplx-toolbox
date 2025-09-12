@@ -14,10 +14,10 @@ Body Pose Mapping (21 joints)
 
 Interop Helpers
 - In `smplx_toolbox.vposer.model.VPoserModel`:
-  - `convert_named_pose_to_pose_body(npz: NamedPose) -> Tensor`
-    - Builds `(B, 63)` body AA from a `NamedPose` using the mapping above. Missing joints are zero‑filled.
-  - `convert_pose_body_to_named_pose(pose_body: Tensor) -> NamedPose`
-    - Converts `(B, 63)` or `(B, 21, 3)` body AA back to a `NamedPose` with body joints populated (SMPL namespace).
+- `convert_named_pose_to_pose_body(npz: NamedPose) -> Tensor`
+    - Builds `(B, 63)` body AA from a `NamedPose` (which stores intrinsic pose only). Missing joints are zero‑filled.
+- `convert_pose_body_to_named_pose(pose_body: Tensor) -> NamedPose`
+    - Converts `(B, 63)` or `(B, 21, 3)` body AA back to a `NamedPose` with body joints populated (SMPL namespace). Pelvis is not stored.
 
 Encoding/Decoding with VPoser
 ```python

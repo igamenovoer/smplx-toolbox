@@ -23,7 +23,7 @@ This documentation is built with Material for MkDocs.
 - Unified model API: `UnifiedSmplModel.from_smpl_model(base_model)` wraps any SMPL/SMPL-H/SMPL-X model from `smplx.create` and normalizes inputs/outputs.
 - Containers:
   - `UnifiedSmplInputs` – segmented inputs (root/body/hands/face), all AA-space
-  - `NamedPose` – optional helper to inspect/edit packed `(B, N, 3)` poses by joint name
+- `NamedPose` – optional helper to inspect/edit intrinsic `(B, N, 3)` poses by joint name (pelvis excluded)
   - `UnifiedSmplOutput` – unified vertices, faces, 55-joint positions, full pose
 - Adapters:
   - `SMPLXModel` – SMPL-X only, quick `to_mesh(output)` helper

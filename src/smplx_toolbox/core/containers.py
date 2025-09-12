@@ -44,33 +44,11 @@ class UnifiedSmplInputs:
     Attributes
     ----------
     named_pose : NamedPose, optional
-        Preferred single source of pose truth. Use
+        Preferred single source of intrinsic pose truth (excludes pelvis). Use
         ``named_pose.packed_pose`` to get/set joint AAs by name.
-        When provided, segmented pose fields below are ignored.
     global_orient : torch.Tensor, optional
         Global orientation `(B, 3)` to pass to SMPL/SMPL-X as `global_orient`.
         This is separate from `named_pose` (which encodes intrinsic pose only).
-    root_orient : torch.Tensor, optional
-        DEPRECATED. Use ``global_orient`` (view) and edit via
-        ``named_pose.root_orient`` or ``set_joint_pose_value('pelvis', ...)``.
-    pose_body : torch.Tensor, optional
-        Pose of the 21 body joints in axis-angle format (B, 63).
-        Deprecated: use ``named_pose`` instead.
-    left_hand_pose : torch.Tensor, optional
-        Pose of the 15 left hand finger joints in axis-angle format (B, 45).
-        Deprecated: use ``named_pose`` instead.
-    right_hand_pose : torch.Tensor, optional
-        Pose of the 15 right hand finger joints in axis-angle format (B, 45).
-        Deprecated: use ``named_pose`` instead.
-    pose_jaw : torch.Tensor, optional
-        Pose of the jaw joint in axis-angle format (B, 3). SMPL-X only.
-        Deprecated: use ``named_pose`` instead.
-    left_eye_pose : torch.Tensor, optional
-        Pose of the left eyeball in axis-angle format (B, 3). SMPL-X only.
-        Deprecated: use ``named_pose`` instead.
-    right_eye_pose : torch.Tensor, optional
-        Pose of the right eyeball in axis-angle format (B, 3). SMPL-X only.
-        Deprecated: use ``named_pose`` instead.
     betas : torch.Tensor, optional
         Shape parameters of the model (B, n_betas).
     expression : torch.Tensor, optional
@@ -86,8 +64,8 @@ class UnifiedSmplInputs:
 
     Notes
     -----
-    - Prefer ``named_pose`` to manage all pose data. Segmented pose fields are
-      kept for backward compatibility and may be removed in a future version.
+    - Prefer ``named_pose`` to manage all pose data (intrinsic joints only).
+      Pelvis/global orientation must be provided via ``global_orient``.
     - All tensor fields are optional and should have the batch dimension first
       (B, ...). Missing pose segments are automatically filled with zeros of the
       expected size for the model type during the forward pass.
@@ -98,14 +76,6 @@ class UnifiedSmplInputs:
 
     # Orientation (separate from NamedPose)
     global_orient: Tensor | None = None  # (B, 3) - pelvis/global orientation
-    # Pose parameters (axis-angle in radians) — deprecated segmented fields
-    root_orient: Tensor | None = None  # (B, 3) - legacy alias (deprecated)
-    pose_body: Tensor | None = None  # (B, 63) - 21 body joints * 3
-    left_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
-    right_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
-    pose_jaw: Tensor | None = None  # (B, 3) - jaw joint (SMPL-X only)
-    left_eye_pose: Tensor | None = None  # (B, 3) - left eyeball (SMPL-X only)
-    right_eye_pose: Tensor | None = None  # (B, 3) - right eyeball (SMPL-X only)
 
     # Shape and expression
     betas: Tensor | None = None  # (B, n_betas) - shape parameters
@@ -180,13 +150,14 @@ class UnifiedSmplInputs:
         batch_size = self.batch_size()
 
         # Common shape checks
-        # Legacy check only if explicit root_orient tensor was passed
-        ro = getattr(self, "root_orient", None)
-        if ro is not None and ro.shape != (batch_size, 3):
-            raise ValueError(f"root_orient must be (B, 3), got {ro.shape}")
-
-        if self.pose_body is not None and self.pose_body.shape != (batch_size, 63):
-            raise ValueError(f"pose_body must be (B, 63), got {self.pose_body.shape}")
+        # Validate global orientation shape if provided
+        if self.global_orient is not None and self.global_orient.shape != (
+            batch_size,
+            3,
+        ):
+            raise ValueError(
+                f"global_orient must be (B, 3), got {self.global_orient.shape}"
+            )
 
         if self.trans is not None and self.trans.shape != (batch_size, 3):
             raise ValueError(f"trans must be (B, 3), got {self.trans.shape}")
@@ -199,111 +170,14 @@ class UnifiedSmplInputs:
                     f"model expects {num_betas}"
                 )
 
-        # Model-specific validation
-        if model_type == "smpl":
-            # SMPL: no hands, face, or expression
-            if self.left_hand_pose is not None or self.right_hand_pose is not None:
-                raise ValueError("SMPL does not support hand poses")
-            if self.pose_jaw is not None:
-                raise ValueError("SMPL does not support jaw pose")
-            if self.left_eye_pose is not None or self.right_eye_pose is not None:
-                raise ValueError("SMPL does not support eye poses")
-            if self.expression is not None:
-                raise ValueError("SMPL does not support facial expressions")
-            if self.hand_betas is not None:
-                # SMPL has no separate hand shape space
-                raise ValueError("SMPL does not support hand_betas")
-
-        elif model_type == "smplh":
-            # SMPL-H: requires both hands if any provided, no face
-            has_left = self.left_hand_pose is not None
-            has_right = self.right_hand_pose is not None
-
-            if has_left != has_right:
-                raise ValueError(
-                    "SMPL-H requires both left and right hand poses or neither"
-                )
-
-            if self.left_hand_pose is not None and self.left_hand_pose.shape != (
-                batch_size,
-                45,
-            ):
-                raise ValueError(
-                    f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}"
-                )
-            if self.right_hand_pose is not None and self.right_hand_pose.shape != (
-                batch_size,
-                45,
-            ):
-                raise ValueError(
-                    f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}"
-                )
-
-            if self.pose_jaw is not None:
-                raise ValueError("SMPL-H does not support jaw pose")
-            if self.left_eye_pose is not None or self.right_eye_pose is not None:
-                raise ValueError("SMPL-H does not support eye poses")
-            if self.expression is not None:
-                raise ValueError("SMPL-H does not support facial expressions")
-            # hand_betas can be present for MANO-variant models; allow silently
-
-        elif model_type == "smplx":
-            # SMPL-X: if hands provided, both required; same for eyes
-            has_left_hand = self.left_hand_pose is not None
-            has_right_hand = self.right_hand_pose is not None
-            has_left_eye = self.left_eye_pose is not None
-            has_right_eye = self.right_eye_pose is not None
-
-            if has_left_hand != has_right_hand:
-                raise ValueError(
-                    "SMPL-X requires both left and right hand poses or neither"
-                )
-            if has_left_eye != has_right_eye:
-                raise ValueError(
-                    "SMPL-X requires both left and right eye poses or neither"
-                )
-
-            if self.left_hand_pose is not None and self.left_hand_pose.shape != (
-                batch_size,
-                45,
-            ):
-                raise ValueError(
-                    f"left_hand_pose must be (B, 45), got {self.left_hand_pose.shape}"
-                )
-            if self.right_hand_pose is not None and self.right_hand_pose.shape != (
-                batch_size,
-                45,
-            ):
-                raise ValueError(
-                    f"right_hand_pose must be (B, 45), got {self.right_hand_pose.shape}"
-                )
-
-            if self.pose_jaw is not None and self.pose_jaw.shape != (batch_size, 3):
-                raise ValueError(f"pose_jaw must be (B, 3), got {self.pose_jaw.shape}")
-
-            if self.left_eye_pose is not None and self.left_eye_pose.shape != (
-                batch_size,
-                3,
-            ):
-                raise ValueError(
-                    f"left_eye_pose must be (B, 3), got {self.left_eye_pose.shape}"
-                )
-            if self.right_eye_pose is not None and self.right_eye_pose.shape != (
-                batch_size,
-                3,
-            ):
-                raise ValueError(
-                    f"right_eye_pose must be (B, 3), got {self.right_eye_pose.shape}"
-                )
-
-            # Validate expression shape if provided
+        # Model-specific minimal validation
+        if str(model_type) == "smplx":
             if self.expression is not None and num_expressions is not None:
                 if self.expression.shape[1] != num_expressions:
                     raise ValueError(
                         f"expression shape mismatch: got {self.expression.shape[1]} parameters, "
                         f"model expects {num_expressions}"
                     )
-            # hand_betas ignored in SMPL-X models
 
 
     # ------------------------------------------------------------------
@@ -335,14 +209,8 @@ class UnifiedSmplInputs:
             out = {
                 "global_orient": self.global_orient
                 if self.global_orient is not None
-                else (
-                    self.root_orient
-                    if self.root_orient is not None
-                    else torch.zeros((self.batch_size() or 1, 3))
-                ),
-                "body_pose": self.pose_body
-                if self.pose_body is not None
-                else torch.zeros((self.batch_size() or 1, 63)),
+                else torch.zeros((self.batch_size() or 1, 3)),
+                "body_pose": torch.zeros((self.batch_size() or 1, 63)),
                 "return_verts": True,
             }
         if self.betas is not None:
@@ -372,11 +240,6 @@ class UnifiedSmplInputs:
                 out["left_hand_pose"] = lh
             if rh is not None:
                 out["right_hand_pose"] = rh
-        else:
-            if self.left_hand_pose is not None:
-                out["left_hand_pose"] = self.left_hand_pose
-            if self.right_hand_pose is not None:
-                out["right_hand_pose"] = self.right_hand_pose
         # Optional MANO hand shape (wrapper will filter if unsupported)
         if with_hand_shape and self.hand_betas is not None:
             out["hand_betas"] = self.hand_betas  # type: ignore[assignment]
@@ -400,13 +263,6 @@ class UnifiedSmplInputs:
                 out["leye_pose"] = leye
             if reye is not None:
                 out["reye_pose"] = reye
-        else:
-            if self.pose_jaw is not None:
-                out["jaw_pose"] = self.pose_jaw
-            if self.left_eye_pose is not None:
-                out["leye_pose"] = self.left_eye_pose
-            if self.right_eye_pose is not None:
-                out["reye_pose"] = self.right_eye_pose
         if self.expression is not None:
             out["expression"] = self.expression
         return out
