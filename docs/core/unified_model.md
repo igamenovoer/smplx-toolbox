@@ -14,12 +14,14 @@ The `UnifiedSmplModel` wraps any SMPL/SMPL-H/SMPL-X model created via `smplx.cre
 ```python
 import torch
 import smplx
-from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, NamedPose
+from smplx_toolbox.core.constants import ModelType
 
 base = smplx.create("/path/to/models", model_type="smplx", gender="neutral", use_pca=False)
 umodel = UnifiedSmplModel.from_smpl_model(base)
 
-inputs = UnifiedSmplInputs(root_orient=torch.zeros(1, 3), pose_body=torch.zeros(1, 63))
+npz = NamedPose(model_type=ModelType.SMPLX, batch_size=1)
+inputs = UnifiedSmplInputs(named_pose=npz)
 out = umodel(inputs)
 print(out.vertices.shape, out.joints.shape, umodel.model_type)
 ```

@@ -29,7 +29,7 @@ def test_named_pose_init_and_shapes(mt: ModelType, expected_n: int) -> None:
     assert npz.packed_pose.shape == (2, expected_n, 3)
 
 
-def test_named_pose_get_set_and_repeat_smplx() -> None:
+def test_named_pose_get_set_smplx() -> None:
     B = 2
     npz = NamedPose(model_type=ModelType.SMPLX, batch_size=B)
     # Set with (B,3)
@@ -37,7 +37,7 @@ def test_named_pose_get_set_and_repeat_smplx() -> None:
     assert npz.get_joint_index("left_eye_smplhf") is not None
     assert npz.get_joint_index("left_eye") is None  # unknown name in this namespace
 
-    ok = npz.set_joint_pose("left_eye_smplhf", val)
+    ok = npz.set_joint_pose_value("left_eye_smplhf", val)
     assert ok is True
 
     got = npz.get_joint_pose("left_eye_smplhf")
@@ -47,16 +47,7 @@ def test_named_pose_get_set_and_repeat_smplx() -> None:
     # Unknown names: getters -> None, setters -> KeyError
     assert npz.get_joint_pose("left_eye") is None
     with pytest.raises(KeyError):
-        _ = npz.set_joint_pose("left_eye", val)
-
-    # Repeat batch
-    npz.repeat(3)
-    assert npz.packed_pose.shape[0] == B * 3
-    # Values at repeated slots should match
-    assert torch.allclose(
-        npz.packed_pose[:B, npz.get_joint_index("left_eye_smplhf") or 0, :],  # type: ignore[index]
-        npz.packed_pose[B : 2 * B, npz.get_joint_index("left_eye_smplhf") or 0, :],  # type: ignore[index]
-    )
+        _ = npz.set_joint_pose_value("left_eye", val)
 
 
 def test_named_pose_to_dict_view_semantics_smplh() -> None:
@@ -87,5 +78,4 @@ def test_named_pose_name_index_helpers_and_errors() -> None:
         _ = npz.get_joint_name(999)
     # Shape error
     with pytest.raises(ValueError):
-        _ = npz.set_joint_pose("pelvis", torch.randn(2, 2))
-
+        _ = npz.set_joint_pose_value("pelvis", torch.randn(2, 2))

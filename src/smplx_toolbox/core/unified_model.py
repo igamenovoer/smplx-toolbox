@@ -30,11 +30,12 @@ Usage Pattern
     # 2. Wrap it with the UnifiedSmplModel
     model = UnifiedSmplModel.from_smpl_model(base_smplx_model)
 
-    # 3. Create segmented inputs (axis-angle)
-    inputs = UnifiedSmplInputs(
-        root_orient=torch.zeros(1, 3),
-        pose_body=torch.zeros(1, 63),
-    )
+    # 3. Create pose via NamedPose (preferred)
+    from smplx_toolbox.core import NamedPose
+    from smplx_toolbox.core.constants import ModelType
+    npz = NamedPose(model_type=ModelType.SMPLX, batch_size=1)
+    # Optionally edit joint AAs via npz.set_joint_pose_value(name, value)
+    inputs = UnifiedSmplInputs(named_pose=npz)
 
     # 4. Run the forward pass
     output = model(inputs)

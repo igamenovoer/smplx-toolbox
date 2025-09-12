@@ -425,5 +425,5 @@ class VPoserModel(nn.Module):
         ]
         npz = NamedPose(model_type=ModelType.SMPL, batch_size=B)
         for i, name in enumerate(names):
-            npz.set_joint_pose(name, body[:, i])
+            npz.set_joint_pose_value(name, body[:, i])
         return npz

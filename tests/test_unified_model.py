@@ -8,7 +8,9 @@ from smplx_toolbox.core import (
     UnifiedSmplInputs,
     UnifiedSmplModel,
     UnifiedSmplOutput,
+    NamedPose,
 )
+from smplx_toolbox.core.constants import ModelType
 
 
 class MockSMPLModel(nn.Module):
@@ -104,10 +106,10 @@ def test_unified_model_forward():
 
     # Create inputs
     print("\n[TEST 1] Forward pass with UnifiedSmplInputs...")
+    npz = NamedPose(model_type=ModelType.SMPLX, batch_size=2)
     inputs = UnifiedSmplInputs(
         betas=torch.randn(2, 10),
-        root_orient=torch.randn(2, 3),
-        pose_body=torch.randn(2, 63),  # Flattened 21 joints * 3 = 63
+        named_pose=npz,
     )
 
     output = unified(inputs)

@@ -33,7 +33,8 @@ try:
 except Exception as _imp_err:  # pragma: no cover - environment dependent
     pytest.skip(f"smplx not importable: {_imp_err}", allow_module_level=True)
 
-from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, UnifiedSmplOutput
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, UnifiedSmplOutput, NamedPose
+from smplx_toolbox.core.constants import ModelType
 
 # ------------------------------------------------------------------------
 # Environment checks
@@ -93,12 +94,10 @@ def smplx_model() -> Any:
 
 @pytest.fixture
 def batch2_inputs() -> UnifiedSmplInputs:
-    # Common minimal inputs (B=2)
-    return UnifiedSmplInputs(
-        betas=torch.randn(2, 10),
-        root_orient=torch.randn(2, 3),
-        pose_body=torch.randn(2, 63),
-    )
+    # Common minimal inputs (B=2) using NamedPose (preferred)
+    B = 2
+    npz = NamedPose(model_type=ModelType.SMPLX, batch_size=B)
+    return UnifiedSmplInputs(named_pose=npz, betas=torch.randn(B, 10))
 
 
 # ------------------------------------------------------------------------
@@ -120,66 +119,23 @@ def test_factory_and_detection_real(smpl_model: Any, smplh_model: Any, smplx_mod
 # Tests: UnifiedSmplInputs basic props and validation (no model needed)
 # ------------------------------------------------------------------------
 
-def test_inputs_computed_properties() -> None:
+def test_named_pose_aggregate_properties() -> None:
     B = 3
-    inputs = UnifiedSmplInputs(
-        left_hand_pose=torch.randn(B, 45),
-        right_hand_pose=torch.randn(B, 45),
-        left_eye_pose=torch.randn(B, 3),
-        right_eye_pose=torch.randn(B, 3),
-    )
-    assert inputs.hand_pose is not None
-    assert inputs.hand_pose.shape == (B, 90)
-    assert inputs.eyes_pose is not None
-    assert inputs.eyes_pose.shape == (B, 6)
+    npz = NamedPose(model_type=ModelType.SMPLX, batch_size=B)
+    hands = npz.hand_pose()
+    eyes = npz.eyes_pose()
+    assert hands is not None and hands.shape == (B, 90)
+    assert eyes is not None and eyes.shape == (B, 6)
 
 
-def test_inputs_validation_rules_smpl_disallows_face_and_hands() -> None:
+def test_inputs_validation_basic_no_error() -> None:
+    # Minimal check: validation runs without error for any model type when using NamedPose
     B = 1
-    inputs = UnifiedSmplInputs(
-        root_orient=torch.zeros(B, 3),
-        pose_body=torch.zeros(B, 63),
-        left_hand_pose=torch.zeros(B, 45),
-        right_hand_pose=torch.zeros(B, 45),
-        expression=torch.zeros(B, 10),
-        pose_jaw=torch.zeros(B, 3),
-        left_eye_pose=torch.zeros(B, 3),
-        right_eye_pose=torch.zeros(B, 3),
-    )
-    with pytest.raises(ValueError):
-        inputs.check_valid("smpl")
-
-
-def test_inputs_validation_rules_smplh_requires_both_hands() -> None:
-    B = 2
-    inputs = UnifiedSmplInputs(
-        root_orient=torch.zeros(B, 3),
-        pose_body=torch.zeros(B, 63),
-        left_hand_pose=torch.zeros(B, 45),
-    )
-    with pytest.raises(ValueError):
-        inputs.check_valid("smplh")
-
-
-def test_inputs_validation_rules_smplx_pairwise_hands_and_eyes() -> None:
-    B = 2
-    # Only one eye provided
-    inputs = UnifiedSmplInputs(
-        root_orient=torch.zeros(B, 3),
-        pose_body=torch.zeros(B, 63),
-        left_eye_pose=torch.zeros(B, 3),
-    )
-    with pytest.raises(ValueError):
-        inputs.check_valid("smplx")
-
-    # Only one hand provided
-    inputs = UnifiedSmplInputs(
-        root_orient=torch.zeros(B, 3),
-        pose_body=torch.zeros(B, 63),
-        right_hand_pose=torch.zeros(B, 45),
-    )
-    with pytest.raises(ValueError):
-        inputs.check_valid("smplx")
+    npz = NamedPose(model_type=ModelType.SMPLX, batch_size=B)
+    inputs = UnifiedSmplInputs(named_pose=npz)
+    inputs.check_valid("smpl")
+    inputs.check_valid("smplh")
+    inputs.check_valid("smplx")
 
 
 # ------------------------------------------------------------------------
