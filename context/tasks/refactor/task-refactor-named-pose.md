@@ -12,7 +12,7 @@
 - Several call sites, including `UnifiedSmplInputs.from_keypoint_pose`, accept `PoseByKeypoints` and convert it internally to packed segments.
 - This leads to duplication (per-joint assembly) and encourages passing a heavy, optional-attribute container through APIs.
 
-## Proposed Design
+## Proposed Design (Updated)
 
 ### `NamedPose` (utility only)
 
@@ -22,11 +22,11 @@
 
 - Data members:
   - `model_type: ModelType` — required model kind (`SMPL`, `SMPLH`, `SMPLX`).
-  - `packed_pose: torch.Tensor` — shape `(B, N, 3)` (axis–angle per joint), contiguous.
+- `packed_pose: torch.Tensor` — shape `(B, N, 3)` (axis–angle per joint), contiguous. Intrinsic joints ONLY — pelvis (global orientation) is excluded.
   - Optional convenience: `batch_size: int = 1` — used to allocate `packed_pose` when not supplied.
 
 - Core behavior:
-  - Interpret `packed_pose` with a fixed joint namespace and index mapping based on `model_type`.
+  - Interpret `packed_pose` with a fixed joint namespace and index mapping based on `model_type`, EXCLUDING the pelvis.
   - Provide safe getters/setters by joint name that do not create autograd edges or modify gradients.
   - Unsupported joints for the given `model_type` return `None` on getters; setters raise a `KeyError`.
 
@@ -35,8 +35,8 @@
     - Returns a detached tensor of shape `(B, 1, 3)` (copy) if supported; otherwise `None`.
   - `set_joint_pose(name: str, pose: torch.Tensor) -> bool`
     - Accepts `(B, 1, 3)` or `(B, 3)` and reshapes `(B, 3) -> (B, 1, 3)` automatically. Assigns under `torch.no_grad()` into `packed_pose` at the appropriate index; returns `True` if set; raises `KeyError` if the joint name is not valid for the current `model_type`; raises `ValueError` for wrong shapes.
-  - `to_dict() -> dict[str, torch.Tensor]`
-    - Returns a mapping from joint names to tensor views of shape `(B, 1, 3)` that slice `packed_pose` in-place. Modifying these tensors will modify `NamedPose.packed_pose` directly.
+  - `to_dict(with_pelvis: bool = False) -> dict[str, torch.Tensor]`
+    - Returns a mapping from intrinsic joint names to tensor views of shape `(B, 1, 3)`. If `with_pelvis=True`, includes `'pelvis'` mapped to zeros `(B, 1, 3)`.
   - `get_joint_index(name: str) -> int | None`
     - Returns the integer index (0-based within the second dimension of `packed_pose`) for the joint `name`; returns `None` if the name is not valid for the current `model_type`.
   - `get_joint_indices(names: list[str]) -> list[int | None]`
@@ -45,13 +45,13 @@
     - Inverse mapping: returns the canonical joint name for a given index; raises `IndexError` if out of range for the current `model_type`.
   - `get_joint_names(indices: list[int]) -> list[str]`
     - Vectorized variant returning names for each index; raises `IndexError` on any invalid index.
-  - `repeat(n: int) -> None`
-    - In-place batch replication: replaces `packed_pose` with its batch repeated `n` times along dim 0, making batch size `B * n`. Intended for quickly constructing `B > 1` without needing joint details.
+  - `pelvis` property
+    - Returns zero AA `(B, 3)` for convenience when building full poses for LBS. Getters/setters for `'pelvis'` raise `KeyError` to signal it's not part of intrinsic pose.
 
-- Joint namespace and counts (N):
-  - SMPL: `N=22` — `root` + 21 body joints.
-  - SMPL-H: `N=52` — SMPL body + 15 left hand + 15 right hand.
-  - SMPL-X: `N=55` — SMPL body + `jaw`, `left_eye_smplhf`, `right_eye_smplhf` + both hands.
+- Joint namespace and counts (N) — intrinsic only (no pelvis):
+  - SMPL: `N=21` — 21 body joints (pelvis excluded).
+  - SMPL-H: `N=51` — SMPL (21) + 15 left hand + 15 right hand.
+  - SMPL-X: `N=54` — SMPL (21) + `jaw`, `left_eye_smplhf`, `right_eye_smplhf` + both hands.
 
 - Validation:
   - Init behavior:
@@ -67,8 +67,9 @@
 ### API Surface Changes Elsewhere
 
 - `UnifiedSmplInputs`:
+  - Add `global_orient: (B, 3)` as a standalone field to pass to SMPL/SMPL‑X.
+  - `named_pose` contains intrinsic pose only; conversion helpers use `global_orient` + `named_pose` to form model kwargs.
   - Deprecate and remove `from_keypoint_pose(PoseByKeypoints, ...)`.
-  - Accept only segmented tensors or a packed pose (if we decide to add a `from_packed_pose` helper). Prefer keeping `UnifiedSmplInputs` independent of any named wrapper.
 
 - Remove `PoseByKeypoints` usage from all public forward paths. Keep it temporarily with a deprecation warning for internal tests that still reference it, then delete.
 

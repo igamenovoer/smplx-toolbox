@@ -18,9 +18,9 @@ from smplx_toolbox.core import NamedPose
 @pytest.mark.parametrize(
     "mt,expected_n",
     [
-        (ModelType.SMPL, 22),
-        (ModelType.SMPLH, 52),
-        (ModelType.SMPLX, 55),
+        (ModelType.SMPL, 21),   # intrinsic pose excludes pelvis
+        (ModelType.SMPLH, 51),  # 52 - pelvis
+        (ModelType.SMPLX, 54),  # 55 - pelvis
     ],
 )
 def test_named_pose_init_and_shapes(mt: ModelType, expected_n: int) -> None:
@@ -77,5 +77,6 @@ def test_named_pose_name_index_helpers_and_errors() -> None:
     with pytest.raises(IndexError):
         _ = npz.get_joint_name(999)
     # Shape error
-    with pytest.raises(ValueError):
-        _ = npz.set_joint_pose_value("pelvis", torch.randn(2, 2))
+    # Pelvis is not part of intrinsic pose; setter must raise KeyError
+    with pytest.raises(KeyError):
+        _ = npz.set_joint_pose_value("pelvis", torch.randn(2, 3))

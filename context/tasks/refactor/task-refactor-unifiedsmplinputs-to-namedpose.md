@@ -28,15 +28,16 @@
 Phased plan to minimize breakage and allow smooth migration. Items marked [DONE]
 have been implemented in this branch.
 
-1) Introduce `named_pose` and centralize pose logic [DONE]
+1) Introduce `named_pose` (intrinsic pose only) and centralize pose logic [DONE]
 - Add `named_pose: NamedPose | None = None` to `UnifiedSmplInputs`. [DONE]
+- NamedPose now stores INTRINSIC joints only (no pelvis/global-orient). [DONE]
+- Add `global_orient: Tensor | None` as a separate member on `UnifiedSmplInputs` to pass to SMPL/SMPL‑X. [DONE]
 - Prefer `named_pose` when present; keep segmented fields for compatibility. [DONE]
 - Add internal slicers in `UnifiedSmplInputs` to derive per-family kwargs from `named_pose`. [DONE]
 - Move aggregate helpers to `NamedPose`: `hand_pose()` and `eyes_pose()`. [DONE]
-- Deprecate `UnifiedSmplInputs.hand_pose` / `eyes_pose` to delegate to `NamedPose`. [DONE]
 
 2) Update conversion methods to read from `named_pose` [DONE]
-- `to_smpl_inputs` builds root/body from `named_pose`. [DONE]
+- `to_smpl_inputs` builds body from `named_pose` and uses `global_orient` separately. [DONE]
 - `to_smplh_inputs` adds hand poses from `named_pose`. [DONE]
 - `to_smplx_inputs` adds jaw/eye poses from `named_pose`. [DONE]
 - Shapes and key names remain unchanged. [DONE]
@@ -48,6 +49,7 @@ have been implemented in this branch.
   - When `copy=False`, concatenates views so gradients flow back to the source. [DONE]
   - When `copy=True`, clones and ensures `.contiguous()` layout. [DONE]
 - Remove obsolete `.repeat()` from `NamedPose`. [DONE]
+ - New: `pelvis` property returns zero AA `(B,3)`; getters/setters for `'pelvis'` raise `KeyError`. `to_dict(with_pelvis=False)` excludes pelvis by default. [DONE]
 
 4) Migrate internal call sites and documentation [PARTIAL]
 - docs: Updated `docs/core/containers.md` to describe `named_pose` and `to_model_type`. [DONE]
@@ -146,3 +148,69 @@ assert npz_s_clone.packed_pose.is_contiguous()
   - `tests/fitting/*` and `unittests/fitting/*` (exercise conversion correctness)
 - Third-party docs:
   - VPoser interop utilities in `src/smplx_toolbox/vposer/model.py`
+
+## Fitting Migration (Optimization module)
+
+### What to Change
+- Move fitting parameterization from separate tensors (`root_orient`, `pose_body`, `left/right_hand_pose`) to a single `NamedPose` parameter (`npz.packed_pose`: `(B, N, 3)`).
+- Build `UnifiedSmplInputs` with `named_pose=npz` and keep betas/translation as needed.
+- For priors and regularizers, derive slices from `NamedPose`:
+  - `global_orient` via `npz.root_orient` (B, 3) — view of pelvis.
+  - Body `(B, 63)` via `VPoserModel.convert_named_pose_to_pose_body(npz)`.
+  - Hands via `npz.hand_pose()` or collecting explicit finger joint names.
+
+### Why Change
+- Single source of truth prevents drift between multiple pose tensors.
+- Gradients flow cleanly through a unified `(B, N, 3)` parameter.
+- Aligns with `UnifiedSmplInputs` conversion rules and upcoming removal of segmented fields.
+
+### How to Change
+1) Parameterize with `NamedPose`
+```python
+npz = NamedPose(model_type=model.model_type, batch_size=B)
+npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
+inputs = UnifiedSmplInputs(named_pose=npz, betas=betas)
+out = model.forward(inputs)
+```
+
+2) Data terms: unchanged
+- `KeypointMatchLossBuilder` and `ProjectedKeypointMatchLossBuilder` operate on `UnifiedSmplOutput` — no change required.
+
+3) VPoser prior
+- Option A (minimal):
+```python
+pose_body = VPoserModel.convert_named_pose_to_pose_body(npz)
+term_vposer = VPoserPriorLossBuilder.from_vposer(model, vposer).by_pose(pose_body, w_pose_fit, w_latent_l2)
+```
+- Option B (ergonomic): add `by_named_pose(npz, w_pose_fit, w_latent_l2)` wrapper in `VPoserPriorLossBuilder` to perform the conversion internally. [TODO]
+
+4) Regularization
+- Use views/slices from `npz`:
+```python
+reg = (npz.root_orient**2).sum()
+reg += (VPoserModel.convert_named_pose_to_pose_body(npz)**2).sum()
+# Optional: include hands by collecting joint names via HandFingerJoint
+```
+
+### Tests and Smoke Scripts to Update
+- `tests/fitting/smoke_test_keypoint_match.py`:
+  - Replace separate `root_orient`/`pose_body`/`left_hand_pose` params with a single `npz.packed_pose` param.
+  - Forward with `UnifiedSmplInputs(named_pose=npz, ...)`.
+  - L2 reg computed from `npz.root_orient` and body slice.
+- `tests/fitting/smoke_test_keypoint_match_vposer.py`:
+  - Same parameterization via `NamedPose`.
+  - Use `VPoserModel.convert_named_pose_to_pose_body(npz)` when calling `by_pose(...)`.
+- If present, update `unittests/fitting/*` similarly.
+
+### Migration Strategy
+- Phase 1 (compat window): 
+  - Keep builders unchanged; move fitting scripts/tests to `NamedPose`.
+  - Optionally add `VPoserPriorLossBuilder.by_named_pose` for convenience.
+- Phase 2 (removal):
+  - Remove segmented fields from `UnifiedSmplInputs` signature and deprecated properties.
+  - Ensure all fitting code relies solely on `NamedPose`.
+
+### References (Fitting)
+- Code: `src/smplx_toolbox/optimization/*`
+- Smoke scripts: `tests/fitting/smoke_test_keypoint_match.py`, `tests/fitting/smoke_test_keypoint_match_vposer.py`
+- Loss builders operate on outputs only; no changes required beyond call sites.

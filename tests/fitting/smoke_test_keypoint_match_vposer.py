@@ -27,13 +27,15 @@ import torch
 import pyvista as pv
 import smplx
 
-from smplx_toolbox.core.constants import CoreBodyJoint
+from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
+from smplx_toolbox.core import NamedPose
 from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
 from smplx_toolbox.optimization import (
     KeypointMatchLossBuilder,
     VPoserPriorLossBuilder,
 )
 from smplx_toolbox.vposer import load_vposer
+from smplx_toolbox.vposer.model import VPoserModel
 from smplx_toolbox.visualization import SMPLVisualizer, add_connection_lines
 from smplx_toolbox.utils import select_device
 
@@ -118,11 +120,12 @@ def _optimize_pose_to_targets(
     device = model.device
     dtype = model.dtype
 
-    # Trainable pose parameters (start at identity/zeros)
-    root_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
-    pose_body = torch.nn.Parameter(torch.zeros((1, 63), device=device, dtype=dtype))
+    # Trainable parameters: NamedPose + separate global_orient
+    npz = NamedPose(model_type=ModelType(str(model.model_type)), batch_size=1)
+    npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
+    global_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
 
-    params = [root_orient, pose_body]
+    params = [npz.packed_pose, global_orient]
     opt = torch.optim.Adam(params, lr=lr)
 
     # Loss: data
@@ -143,23 +146,26 @@ def _optimize_pose_to_targets(
         vposer.to(device=device)
         vposer.eval()
         vp_builder = VPoserPriorLossBuilder.from_vposer(model, vposer)
+        pose_body = VPoserModel.convert_named_pose_to_pose_body(npz)
         term_vposer = vp_builder.by_pose(pose_body, w_pose_fit, w_latent_l2)
 
     # Initial eval
-    out0 = model.forward(UnifiedSmplInputs(root_orient=root_orient.detach(), pose_body=pose_body.detach()))
+    out0 = model.forward(
+        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+    )
     with torch.no_grad():
         loss0 = float(term_data(out0).item())
 
     # Optimize
     for i in range(steps):
         opt.zero_grad()
-        out = model.forward(UnifiedSmplInputs(root_orient=root_orient, pose_body=pose_body))
+        out = model.forward(UnifiedSmplInputs(named_pose=npz, global_orient=global_orient))
         loss = term_data(out)
         # Add VPoser term if available
         if term_vposer is not None:
             loss = loss + term_vposer(out)
-        # L2 reg on root_orient and pose_body
-        reg = (root_orient**2).sum() + (pose_body**2).sum()
+        # L2 reg on intrinsic pose only (keep global_orient free)
+        reg = (npz.packed_pose**2).sum()
         loss = loss + float(l2_weight) * reg
         if i % 10 == 0 or i == steps - 1:
             try:
@@ -171,7 +177,7 @@ def _optimize_pose_to_targets(
         opt.step()
 
     out_final = model.forward(
-        UnifiedSmplInputs(root_orient=root_orient.detach(), pose_body=pose_body.detach())
+        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
     )
     with torch.no_grad():
         loss_final = float(term_data(out_final).item())

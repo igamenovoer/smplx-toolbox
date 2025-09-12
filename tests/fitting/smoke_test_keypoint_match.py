@@ -28,7 +28,8 @@ import smplx
 
 # Do not force a Jupyter backend; default plotter is fine in shells/CI
 
-from smplx_toolbox.core.constants import CoreBodyJoint
+from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
+from smplx_toolbox.core import NamedPose
 from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
 from smplx_toolbox.optimization import KeypointMatchLossBuilder
 from smplx_toolbox.visualization import SMPLVisualizer, add_connection_lines
@@ -121,21 +122,12 @@ def _optimize_pose_to_targets(
     device = model.device
     dtype = model.dtype
 
-    # Trainable pose parameters (start at identity/zeros)
-    # - Always optimize root orient (3), body pose (63)
-    # - For SMPL-H/SMPL-X, also optimize left hand (45) and keep right hand zeros
-    root_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
-    pose_body = torch.nn.Parameter(torch.zeros((1, 63), device=device, dtype=dtype))
-    left_hand_pose: torch.Tensor | None = None
-    right_hand_pose: torch.Tensor | None = None
+    # Trainable parameters: NamedPose (intrinsic pose) + separate global_orient
+    npz = NamedPose(model_type=ModelType(str(model.model_type)), batch_size=1)
+    npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
+    global_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
 
-    params = [root_orient, pose_body]
-    if str(model.model_type) in ("smplh", "smplx"):
-        left_hand_pose = torch.nn.Parameter(
-            torch.zeros((1, 45), device=device, dtype=dtype)
-        )
-        right_hand_pose = torch.zeros((1, 45), device=device, dtype=dtype)
-        params.append(left_hand_pose)
+    params = [npz.packed_pose, global_orient]
     opt = torch.optim.Adam(params, lr=lr)
 
     # Loss builder
@@ -148,34 +140,20 @@ def _optimize_pose_to_targets(
     )
 
     # Initial eval
-    base_kwargs: dict[str, torch.Tensor] = {
-        "root_orient": root_orient.detach(),
-        "pose_body": pose_body.detach(),
-    }
-    if left_hand_pose is not None and right_hand_pose is not None:
-        base_kwargs["left_hand_pose"] = left_hand_pose.detach()
-        base_kwargs["right_hand_pose"] = right_hand_pose
-    out0 = model.forward(UnifiedSmplInputs(**base_kwargs))
+    out0 = model.forward(
+        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+    )
     with torch.no_grad():
         loss0 = float(term(out0).item())
 
     # Optimize
     for i in range(steps):
         opt.zero_grad()
-        loop_kwargs: dict[str, torch.Tensor] = {
-            "root_orient": root_orient,
-            "pose_body": pose_body,
-        }
-        if left_hand_pose is not None and right_hand_pose is not None:
-            loop_kwargs["left_hand_pose"] = left_hand_pose
-            loop_kwargs["right_hand_pose"] = right_hand_pose
-        out = model.forward(UnifiedSmplInputs(**loop_kwargs))
+        out = model.forward(UnifiedSmplInputs(named_pose=npz, global_orient=global_orient))
         # Data term
         loss = term(out)
-        # L2 regularization on optimized parameters
-        reg: torch.Tensor = (root_orient**2).sum() + (pose_body**2).sum()
-        if left_hand_pose is not None:
-            reg = reg + (left_hand_pose**2).sum()
+        # L2 regularization on intrinsic pose only (not on global_orient)
+        reg: torch.Tensor = (npz.packed_pose**2).sum()
         loss = loss + float(l2_weight) * reg
         if i % 10 == 0 or i == steps - 1:
             try:
@@ -186,14 +164,9 @@ def _optimize_pose_to_targets(
         loss.backward()
         opt.step()
 
-    final_kwargs: dict[str, torch.Tensor] = {
-        "root_orient": root_orient.detach(),
-        "pose_body": pose_body.detach(),
-    }
-    if left_hand_pose is not None and right_hand_pose is not None:
-        final_kwargs["left_hand_pose"] = left_hand_pose.detach()
-        final_kwargs["right_hand_pose"] = right_hand_pose
-    out_final = model.forward(UnifiedSmplInputs(**final_kwargs))
+    out_final = model.forward(
+        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+    )
     with torch.no_grad():
         loss_final = float(term(out_final).item())
 

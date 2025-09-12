@@ -47,10 +47,9 @@ class UnifiedSmplInputs:
         Preferred single source of pose truth. Use
         ``named_pose.packed_pose`` to get/set joint AAs by name.
         When provided, segmented pose fields below are ignored.
-    global_orient : property
-        View into the pelvis joint axis-angle `(B, 3)`. When `named_pose` is set,
-        this returns a view into `named_pose.packed_pose`; otherwise falls back to
-        legacy `root_orient` if present, or zeros.
+    global_orient : torch.Tensor, optional
+        Global orientation `(B, 3)` to pass to SMPL/SMPL-X as `global_orient`.
+        This is separate from `named_pose` (which encodes intrinsic pose only).
     root_orient : torch.Tensor, optional
         DEPRECATED. Use ``global_orient`` (view) and edit via
         ``named_pose.root_orient`` or ``set_joint_pose_value('pelvis', ...)``.
@@ -94,11 +93,13 @@ class UnifiedSmplInputs:
       expected size for the model type during the forward pass.
     """
 
-    # Single source of pose truth (preferred)
+    # Single source of pose truth (preferred) — intrinsic pose only (no pelvis)
     named_pose: "NamedPose | None" = None
 
-    # Pose parameters (axis-angle in radians) — deprecated; prefer named_pose
-    root_orient: Tensor | None = None  # (B, 3) - pelvis/global orientation
+    # Orientation (separate from NamedPose)
+    global_orient: Tensor | None = None  # (B, 3) - pelvis/global orientation
+    # Pose parameters (axis-angle in radians) — deprecated segmented fields
+    root_orient: Tensor | None = None  # (B, 3) - legacy alias (deprecated)
     pose_body: Tensor | None = None  # (B, 63) - 21 body joints * 3
     left_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
     right_hand_pose: Tensor | None = None  # (B, 45) - 15 finger joints * 3
@@ -126,23 +127,7 @@ class UnifiedSmplInputs:
     # -----------------
     # Properties
     # -----------------
-    @property
-    def global_orient(self) -> Tensor:
-        """View of the global orientation `(B, 3)`.
-
-        Returns
-        -------
-        torch.Tensor
-            If `named_pose` is provided, returns a view into its pelvis joint
-            axis-angle `(B, 3)`. Otherwise returns the legacy `root_orient`
-            tensor if present, or a zero tensor with inferred batch size.
-        """
-        if self.named_pose is not None and self.named_pose.packed_pose is not None:
-            return self.named_pose.root_orient
-        # Legacy fallback for compatibility
-        if hasattr(self, "root_orient") and self.root_orient is not None:  # type: ignore[attr-defined]
-            return self.root_orient  # type: ignore[return-value,attr-defined]
-        return torch.zeros((self.batch_size() or 1, 3))
+    # global_orient is a plain member. No property indirection.
 
     # Note: Aggregate helpers have moved to NamedPose (hand_pose, eyes_pose).
 
@@ -340,13 +325,21 @@ class UnifiedSmplInputs:
             B = int(self.named_pose.packed_pose.shape[0])
             body = self._npz_body_pose(self.named_pose)
             out: dict[str, Tensor | bool] = {
-                "global_orient": self.global_orient,
+                "global_orient": self.global_orient
+                if self.global_orient is not None
+                else torch.zeros((B, 3)),
                 "body_pose": body if body is not None else torch.zeros((B, 63)),
                 "return_verts": True,
             }
         else:
             out = {
-                "global_orient": self.global_orient,
+                "global_orient": self.global_orient
+                if self.global_orient is not None
+                else (
+                    self.root_orient
+                    if self.root_orient is not None
+                    else torch.zeros((self.batch_size() or 1, 3))
+                ),
                 "body_pose": self.pose_body
                 if self.pose_body is not None
                 else torch.zeros((self.batch_size() or 1, 63)),
@@ -421,13 +414,6 @@ class UnifiedSmplInputs:
     # -----------------
     # NamedPose slicers
     # -----------------
-    def _npz_root_orient(self, npz: "NamedPose") -> Tensor | None:
-        idx = npz.get_joint_index(CoreBodyJoint.PELVIS.value)
-        if idx is None or npz.packed_pose is None:
-            return None
-        B = int(npz.packed_pose.shape[0])
-        return npz.packed_pose[:, idx, :].view(B, 3)
-
     def _npz_body_pose(self, npz: "NamedPose") -> Tensor | None:
         if npz.packed_pose is None:
             return None
@@ -489,10 +475,13 @@ class UnifiedSmplInputs:
 
 @define(kw_only=True)
 class NamedPose:
-    """Lightweight accessor around a packed axis-angle pose `(B, N, 3)`.
+    """Lightweight accessor around intrinsic axis-angle pose `(B, N, 3)`.
 
     This utility interprets a packed pose tensor using the model type's joint
     namespace and provides convenience getters and setters by joint name.
+    The packed pose EXCLUDES the pelvis (global orientation). Use
+    :attr:`pelvis` as a zero AA convenience or pass `global_orient` separately
+    via :class:`UnifiedSmplInputs`.
 
     Parameters
     ----------
@@ -507,9 +496,10 @@ class NamedPose:
 
     Notes
     -----
-    - Getters return `None` for unknown joint names.
-    - Setters raise `KeyError` for unknown joint names and `ValueError` for
-      invalid shapes. `(B, 3)` inputs are reshaped to `(B, 1, 3)` automatically.
+    - Getters return `None` for unknown joint names (except 'pelvis', which
+      raises a `KeyError` to signal it is not part of intrinsic pose).
+    - Setters raise `KeyError` for unknown joint names (or 'pelvis') and
+      `ValueError` for invalid shapes. `(B, 3)` inputs are reshaped to `(B, 1, 3)`.
     """
 
     model_type: ModelType
@@ -521,17 +511,17 @@ class NamedPose:
     _index_to_name: list[str] = field(init=False, factory=list)
 
     def __attrs_post_init__(self) -> None:
-        # Build joint name order and mapping based on model_type
+        # Build intrinsic joint name order and mapping (exclude pelvis)
         if self.model_type == ModelType.SMPL:
-            names = [j.value for j in CoreBodyJoint]
+            names_full = [j.value for j in CoreBodyJoint]
         elif self.model_type == ModelType.SMPLH:
-            names = get_smplh_joint_names()
+            names_full = get_smplh_joint_names()
         elif self.model_type == ModelType.SMPLX:
-            names = get_smplx_joint_names()
+            names_full = get_smplx_joint_names()
         else:
             raise ValueError(f"Unknown model type: {self.model_type}")
 
-        self._index_to_name = list(names)
+        self._index_to_name = [n for n in names_full if n != CoreBodyJoint.PELVIS.value]
         self._name_to_index = {name: i for i, name in enumerate(self._index_to_name)}
 
         expected_n = len(self._index_to_name)
@@ -570,6 +560,8 @@ class NamedPose:
         torch.Tensor or None
             A detached clone of shape `(B, 1, 3)` if the joint exists, else None.
         """
+        if name == CoreBodyJoint.PELVIS.value:
+            raise KeyError("'pelvis' is not stored in NamedPose. Use .pelvis or provide global_orient.")
         idx = self.get_joint_index(name)
         if idx is None:
             return None
@@ -601,6 +593,8 @@ class NamedPose:
         ValueError
             If the provided pose shape is invalid.
         """
+        if name == CoreBodyJoint.PELVIS.value:
+            raise KeyError("Cannot set 'pelvis' in NamedPose. Provide global_orient separately.")
         idx = self.get_joint_index(name)
         if idx is None:
             raise KeyError(
@@ -629,18 +623,23 @@ class NamedPose:
             )
         return True
 
-    def to_dict(self) -> dict[str, Tensor]:
+    def to_dict(self, with_pelvis: bool = False) -> dict[str, Tensor]:
         """Get a mapping from joint name to a view of `(B, 1, 3)`.
 
         Notes
         -----
         The returned tensors are views into `packed_pose`. In-place edits will
-        mutate `packed_pose` directly.
+        mutate `packed_pose` directly. Pelvis is excluded by default; set
+        ``with_pelvis=True`` to include a zero AA pelvis entry.
         """
-        return {
+        out = {
             name: self.packed_pose[:, i : i + 1, :]  # type: ignore[index]
             for i, name in enumerate(self._index_to_name)
         }
+        if with_pelvis:
+            B = self.packed_pose.shape[0] if self.packed_pose is not None else self.batch_size
+            out[CoreBodyJoint.PELVIS.value] = torch.zeros((int(B), 1, 3))
+        return out
 
     # -----------------
     # Name/index helpers
@@ -820,6 +819,15 @@ class NamedPose:
         if le is None or re is None:
             return None
         return torch.cat([le.view(B, 3), re.view(B, 3)], dim=-1)
+
+    @property
+    def pelvis(self) -> Tensor:
+        """Zero AA for pelvis `(B, 3)` — intrinsic poses exclude pelvis by design.
+
+        Provided as a convenience when constructing full poses for LBS.
+        """
+        B = self.packed_pose.shape[0] if self.packed_pose is not None else self.batch_size
+        return torch.zeros((int(B), 3))
 
     # (No batch utilities; handle batching outside this class.)
 
