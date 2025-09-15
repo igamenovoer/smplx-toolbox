@@ -11,10 +11,11 @@ import pytest
 import torch
 import smplx
 
-from smplx_toolbox.core.constants import CoreBodyJoint
+from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
+from smplx_toolbox.core import NamedPose
 from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
 from smplx_toolbox.optimization import KeypointMatchLossBuilder, VPoserPriorLossBuilder
-from smplx_toolbox.vposer import load_vposer
+from smplx_toolbox.vposer.model import VPoserModel
 from smplx_toolbox.utils import select_device
 
 
@@ -29,6 +30,8 @@ class Params:
     NOISE_SCALE: float = 0.3
     STEPS: int = 10
     LR: float = 0.05
+    L2_WEIGHT: float = 1e-2
+    SHAPE_L2_WEIGHT: float = 1e-2
 
     # VPoser prior weights
     VPOSER_POSE_FIT: float = 0.5
@@ -52,6 +55,10 @@ class Params:
         CoreBodyJoint.LEFT_HIP.value,
         CoreBodyJoint.RIGHT_HIP.value,
     ]
+    # Trainable DOFs
+    ENABLE_GLOBAL_ORIENT: bool = True
+    ENABLE_GLOBAL_TRANSLATION: bool = True
+    ENABLE_SHAPE_DEFORMATION: bool = True
 
 
 def _build_smplx() -> UnifiedSmplModel:
@@ -73,8 +80,8 @@ def test_vposer_latent_round_trip() -> None:
     if not VPOSER_CKPT.exists():
         pytest.skip("VPoser checkpoint not found")
     device = select_device()
-    vposer = load_vposer(str(VPOSER_CKPT), map_location=device)
-    vposer.to(device=device).eval()
+    vposer = VPoserModel.from_checkpoint(VPOSER_CKPT, map_location=device)
+    vposer.to(device=device)
 
     # Sample latent and round-trip via decode->encode(mean)
     B = 2
@@ -102,6 +109,11 @@ def _optimize_simple_kpts(
     neutral = model.forward(UnifiedSmplInputs())
     if subset is None:
         subset = [CoreBodyJoint.LEFT_WRIST.value, CoreBodyJoint.RIGHT_FOOT.value]
+    # Seed per-run to vary targets
+    from uuid import uuid4
+    _seed = uuid4().int & 0xFFFFFFFF
+    torch.manual_seed(_seed)
+    np.random.seed(_seed)
     with torch.no_grad():
         sel = model.select_joints(neutral.joints, names=subset)  # (B,N,3)
         targets = sel + float(Params.NOISE_SCALE) * torch.randn_like(sel)
@@ -109,9 +121,33 @@ def _optimize_simple_kpts(
 
     # Trainable pose
     device, dtype = model.device, model.dtype
-    root_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
-    pose_body = torch.nn.Parameter(torch.zeros((1, 63), device=device, dtype=dtype))
-    params = [root_orient, pose_body]
+    # Pose parameters (NamedPose + optional DOFs)
+    npz = NamedPose(model_type=ModelType(str(model.model_type)), batch_size=1)
+    npz.intrinsic_pose = torch.nn.Parameter(torch.zeros_like(npz.intrinsic_pose))
+    root_orient = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_ORIENT
+        else None
+    )
+    translation = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_TRANSLATION
+        else None
+    )
+    betas = None
+    if Params.ENABLE_SHAPE_DEFORMATION:
+        try:
+            n_betas = int(model.num_betas)
+        except Exception:
+            n_betas = 10
+        betas = torch.nn.Parameter(torch.zeros((1, n_betas), device=device, dtype=dtype))
+    params = [npz.intrinsic_pose]
+    if root_orient is not None:
+        params.append(root_orient)
+    if translation is not None:
+        params.append(translation)
+    if betas is not None:
+        params.append(betas)
     opt = torch.optim.Adam(params, lr=Params.LR)
 
     # Data term
@@ -123,18 +159,29 @@ def _optimize_simple_kpts(
     if use_vposer:
         if not VPOSER_CKPT.exists():
             pytest.skip("VPoser checkpoint not found")
-        vposer = load_vposer(str(VPOSER_CKPT), map_location=device)
-        vposer.to(device=device).eval()
+        vposer = VPoserModel.from_checkpoint(VPOSER_CKPT, map_location=device)
         vp = VPoserPriorLossBuilder.from_vposer(model, vposer)
-        term_vposer = vp.by_pose(pose_body, w_pose_fit=1.0, w_latent_l2=0.1)
+        term_vposer = vp.by_named_pose(npz, w_pose_fit=1.0, w_latent_l2=0.1)
 
     # Few iterations to keep unit test quick
     for _ in range(Params.STEPS):
         opt.zero_grad()
-        out = model.forward(UnifiedSmplInputs(root_orient=root_orient, pose_body=pose_body))
+        out = model.forward(
+            UnifiedSmplInputs(
+                named_pose=npz,
+                global_orient=(root_orient if root_orient is not None else None),
+                trans=(translation if translation is not None else None),
+                betas=(betas if betas is not None else None),
+            )
+        )
         loss = term_data(out)
         if term_vposer is not None:
             loss = loss + term_vposer(out)
+        # Regularization terms
+        if float(Params.L2_WEIGHT) > 0:
+            loss = loss + float(Params.L2_WEIGHT) * (npz.intrinsic_pose**2).sum()
+        if betas is not None and float(Params.SHAPE_L2_WEIGHT) > 0:
+            loss = loss + float(Params.SHAPE_L2_WEIGHT) * (betas**2).sum()
         loss.backward()
         opt.step()
 
@@ -151,12 +198,12 @@ def _optimize_simple_kpts(
         "subset_names": subset,
         "targets": {k: v[0].detach().cpu().numpy() for k, v in targets_map.items()},
         "initial": {
-            "root_orient": torch.zeros_like(root_orient).cpu().numpy(),
-            "pose_body": torch.zeros_like(pose_body).cpu().numpy(),
+            "root_orient": (torch.zeros((1,3)) if root_orient is None else torch.zeros_like(root_orient)).cpu().numpy(),
+            "pose_body": torch.zeros((1,63)).cpu().numpy(),
         },
         "optimized": {
-            "root_orient": root_orient.detach().cpu().numpy(),
-            "pose_body": pose_body.detach().cpu().numpy(),
+            "root_orient": ((torch.zeros((1,3), device=device, dtype=dtype)) if root_orient is None else root_orient.detach()).cpu().numpy(),
+            "pose_body": VPoserModel.convert_named_pose_to_pose_body(npz).detach().cpu().numpy(),
         },
         "use_vposer": bool(use_vposer),
     }
