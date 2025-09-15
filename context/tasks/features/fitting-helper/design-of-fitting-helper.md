@@ -10,13 +10,15 @@ Class Overview
 - Location: src/smplx_toolbox/fitting/helper.py
 - Style: Strongly typed, factory pattern, internal members prefixed with m_, public read-only properties + explicit setters (per project coding guide).
 - Models: Works with UnifiedSmplModel for SMPL, SMPL‑H, SMPL‑X.
-- Priors: Optional VPoser prior (either by checkpoint path or preloaded VPoserModel), optional L2 pose regularization; easily extensible to add more priors later (e.g., angle/shape) without changing the external API.
+- Priors: Optional VPoser prior (attach a preloaded VPoserModel), optional L2 pose regularization; easily extensible to add more priors later (e.g., angle/shape) without changing the external API.
 
 Key Responsibilities
 - Maintain a registry of data terms and priors (loss terms) with their weights.
 - Keep track of 3D keypoint targets by name (unified joint space), with per‑joint weights and optional confidences.
 - Provide a generator/iterator API to run optimization step‑by‑step and report structured status each step.
-- Control VPoser prior and pose L2 via weights (0 disables); adjust weights at runtime.
+- Control DOFs (global orient/translation, shape) via toggles and pose/shape
+  L2 via weights (0 disables); adjust at runtime. Manage VPoser prior via
+  weight controls as well.
 - Expose the underlying loss terms for advanced users who want a custom optimization loop.
 - Allow registering and managing arbitrary custom loss terms by name.
 
@@ -26,14 +28,13 @@ External Dependencies (existing code)
 - smplx_toolbox.optimization.VPoserPriorLossBuilder
 - smplx_toolbox.optimization.AnglePriorLossBuilder
 - smplx_toolbox.optimization.robustifiers (gmof/huber/l2 via builders_base)
-- smplx_toolbox.vposer.load_vposer (when loading by checkpoint)
+- smplx_toolbox.vposer.model.VPoserModel
 
 Public API (with NumPy-style docstrings)
 
 ```python
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Iterator, Literal
 
 import torch
@@ -41,6 +42,7 @@ from torch import Tensor, nn
 
 from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplInputs, UnifiedSmplOutput
 from smplx_toolbox.optimization.keypoint_match_builder import SmplLossTerm
+from smplx_toolbox.vposer.model import VPoserModel
 
 
 class SmplKeypointFittingHelper:
@@ -69,7 +71,7 @@ class SmplKeypointFittingHelper:
 
     def set_keypoint_targets(
         self,
-        targets: dict[str, Tensor] | Tensor,
+        targets: dict[str, Tensor],
         *,
         weights: dict[str, float | Tensor] | float | Tensor | None = None,
         robust: Literal["l2", "huber", "gmof"] = "gmof",
@@ -84,29 +86,31 @@ class SmplKeypointFittingHelper:
 
         Parameters
         ----------
-        targets : dict[str, Tensor] or torch.Tensor
-            - Mapping from unified joint name to target 3D positions of shape
-              ``(B, 3)``; or
-            - A packed tensor of shape ``(B, K, 3)`` following the same
-              joint order and semantics as :attr:`NamedPose.intrinsic_pose`
-              for the current model type (pelvis excluded).
+        targets : dict[str, Tensor]
+            Mapping from unified joint name to target 3D positions of shape
+            ``(B, 3)``. Only name→tensor mappings are accepted; packed tensors
+            and any "packed pose" semantics are not supported.
         weights : dict[str, float or Tensor] or float or Tensor or None, optional
-            Per-joint or scalar weights.
-            - If ``targets`` is a dict, keys must be a subset of ``targets``.
-            - If ``targets`` is a packed tensor ``(B, K, 3)``, accepts
-              ``(B, K)``, ``(K,)``, scalar, or ``(B, K, 1)``.
+            Weights can be provided per-joint via the mapping or as a raw
+            per-sample tensor/scalar.
+            - Mapping: keys must be a subset of ``targets``; values may be
+              scalars or tensors broadcastable to ``(B, 1)``.
+            - Raw tensor: must have shape ``(B,)`` or ``(B, 1)`` (weight per
+              batch sample). A scalar is also accepted and broadcast to all
+              samples. Per-joint raw tensors are not accepted.
         robust : {"l2", "huber", "gmof"}, optional
             Robust penalty for the data term. Defaults to ``"gmof"``.
         rho : float, optional
             Scale parameter for the robustifier. Defaults to ``100.0``.
         confidence : dict[str, float or Tensor] or float or Tensor or None, optional
-            Additional confidence multipliers (same broadcasting rules as
-            ``weights``). When provided, the effective weight is
+            Additional confidence multipliers. Follows the same constraints as
+            ``weights``: mapping by joint name, or a raw tensor of shape
+            ``(B,)`` or ``(B, 1)`` (or a scalar). The effective weight is
             ``weights * confidence``.
         """
         ...
 
-    def set_pose_l2_reg(self, weight: float | Tensor) -> None:
+    def set_reg_pose_l2(self, weight: float | Tensor) -> None:
         """Enable global L2 regularization on optimized pose parameters.
 
         Applies to whichever pose tensors the user marked with
@@ -123,25 +127,55 @@ class SmplKeypointFittingHelper:
         ...
 
     # --- VPoser control (revised naming) ---
-    def vposer_init(self, *, ckpt_path: str | Path | None = None, vposer_model: nn.Module | None = None) -> None:
-        """Initialize VPoser by loading from checkpoint or attaching a model.
+    def vposer_init(self, *, vposer_model: VPoserModel) -> None:
+        """Attach a constructed VPoser model instance.
 
         Parameters
         ----------
-        ckpt_path : str or Path, optional
-            Filesystem path to ``vposer-v2.ckpt``. Mutually exclusive with
-            ``vposer_model``.
-        vposer_model : nn.Module, optional
-            A pre-loaded VPoser model. Mutually exclusive with ``ckpt_path``.
-
-        Raises
-        ------
-        ValueError
-            If neither ``ckpt_path`` nor ``vposer_model`` is provided.
+        vposer_model : VPoserModel
+            A pre-loaded VPoser model instance. The helper does not accept
+            checkpoint paths; construct the model externally (e.g., via
+            :meth:`VPoserModel.from_checkpoint`) and pass it here.
         """
         ...
 
-    def vposer_set_weight(self, *, w_pose_fit: float | Tensor = 0.0, w_latent_l2: float | Tensor = 0.0) -> None:
+    # --- Degree-of-freedom toggles ---
+    def set_dof_global_orient(self, enable: bool) -> None:
+        """Enable or disable optimization over global orientation.
+
+        When disabled, ``root_orient`` is excluded from the trainable set
+        even if its ``requires_grad`` is True in ``UnifiedSmplInputs``.
+        Defaults to ``True`` when the helper is constructed.
+        """
+        ...
+
+    def set_dof_global_translation(self, enable: bool) -> None:
+        """Enable or disable optimization over global translation.
+
+        When disabled, ``trans`` is excluded from the trainable set even if
+        its ``requires_grad`` is True in ``UnifiedSmplInputs``.
+        Defaults to ``True`` when the helper is constructed.
+        """
+        ...
+
+    def set_dof_shape_deform(self, enable: bool) -> None:
+        """Enable or disable optimization over shape parameters (betas).
+
+        When disabled, ``betas`` are excluded from the trainable set even if
+        their ``requires_grad`` is True in ``UnifiedSmplInputs``.
+        Defaults to ``True`` when the helper is constructed.
+        """
+        ...
+
+    # --- Regularization controls ---
+    def set_reg_shape_l2(self, weight: float | Tensor = 1e-2) -> None:
+        """Set L2 regularization weight for shape deformation (betas).
+
+        If ``0`` (or a zero tensor), shape L2 regularization is disabled.
+        """
+        ...
+
+    def vposer_set_reg(self, *, w_pose_fit: float | Tensor = 0.0, w_latent_l2: float | Tensor = 0.0) -> None:
         """Set VPoser prior weights; zero disables the prior.
 
         Parameters
@@ -154,7 +188,7 @@ class SmplKeypointFittingHelper:
             Defaults to ``0.0`` (disabled).
         Notes
         -----
-        The VPoser loss is active only if a VPoser model has been loaded via
+        The VPoser loss is active only if a VPoser model has been attached via
         :meth:`vposer_init` and at least one of ``w_pose_fit`` or ``w_latent_l2``
         is non-zero.
         """
@@ -166,7 +200,7 @@ class SmplKeypointFittingHelper:
         Returns
         -------
         bool
-            True if a VPoser model is loaded and at least one of the weights
+            True if a VPoser model is attached and at least one of the weights
             ``w_pose_fit`` or ``w_latent_l2`` is non-zero; otherwise False.
         """
         ...
@@ -282,49 +316,53 @@ Internal State & Members (read‑only properties)
 
 ```python
 m_model: UnifiedSmplModel  # property model
-m_targets: dict[str, Tensor]
-m_weights: dict[str, Tensor | float] | float | Tensor | None
-m_confidence: dict[str, Tensor | float] | float | Tensor | None
-m_data_term: nn.Module | None
+m_keypts_targets: dict[str, Tensor]
+m_keypts_weights: dict[str, Tensor | float] | float | Tensor | None
+m_keypts_confidence: dict[str, Tensor | float] | float | Tensor | None
+m_keypts_data_term: nn.Module | None
 m_pose_l2_weight: Tensor | None
-m_vposer: nn.Module | None
+m_vposer: VPoserModel | None
 m_vposer_term: nn.Module | None
 m_vposer_weights: tuple[Tensor, Tensor] | None
+m_enable_global_orient: bool
+m_enable_global_translation: bool
+m_enable_shape_deform: bool
 m_custom_terms: dict[str, tuple[SmplLossTerm, float]]
 m_optimizer: torch.optim.Optimizer | None
 m_trainable_params: list[torch.nn.Parameter]
 m_step: int
 m_vposer_enabled: bool
+m_shape_l2_weight: Tensor | None
 ```
 
 Data Term Build Strategy
 - Build a single keypoint data term covering all configured targets, with
   merged weights and confidences.
-  - If targets were provided by name (dict), build via
+  - Targets are provided by name (dict) only and are passed to
     ``KeypointMatchLossBuilder.by_target_positions`` directly.
-  - If targets were provided as a packed tensor ``(B, K, 3)`` in
-    :attr:`NamedPose.intrinsic_pose` order, convert to a name→tensor mapping
-    using the model's intrinsic joint order (pelvis excluded) and then use
-    ``by_target_positions``.
 - Robust kind and rho are provided via ``set_keypoint_targets`` and baked into
   the created term; to change robustifier settings, call
   ``set_keypoint_targets`` again.
 - Overwriting semantics: each call to ``set_keypoint_targets`` replaces the previous targets and rebuilds the data term. To clear all targets, call ``set_keypoint_targets(targets={})``.
-- If m_targets is empty, m_data_term = None.
+- If ``m_keypts_targets`` is empty, ``m_keypts_data_term = None``.
 
 Loss Assembly (each step)
 - Compute total loss as a weighted sum of all active terms:
   - data: weight implicitly 1.0 (the builder already incorporates per‑joint weights)
-  - vposer: included only if a VPoser model is loaded and any VPoser weight
+  - vposer: included only if a VPoser model is attached and any VPoser weight
     is non-zero; the term internally applies ``(w_pose_fit, w_latent_l2)``.
   - pose_l2: m_pose_l2_weight * sum(param**2) over all optimized pose parameters present in current initial (root_orient, pose_body, and any hand poses the user enabled)
+  - shape_l2: m_shape_l2_weight * sum(betas**2) if shape deformation DOF is enabled and betas are present
   - custom: for each (name, (term, w)) in m_custom_terms, compute
     ``loss_name = w * term(output)`` and add to total; record per-term value
     under that name.
 - The helper does not impose other priors by default; extensibility hooks allow new priors later.
 
 Parameter Selection & Optimizer
-- Users provide an initial UnifiedSmplInputs with tensors (e.g., root_orient, pose_body, left_hand_pose, right_hand_pose). The helper scans those tensors for requires_grad=True and collects them as trainable parameters.
+- Users provide an initial UnifiedSmplInputs with tensors (e.g., root_orient, pose_body, left_hand_pose, right_hand_pose, trans, betas). The helper scans those tensors for requires_grad=True and collects them as trainable parameters, then applies DOF gates:
+  - If global orientation is disabled, ``root_orient`` is excluded.
+  - If global translation is disabled, ``trans`` is excluded.
+  - If shape deformation is disabled, ``betas`` are excluded.
   - Default optimizer is Adam(lr); LBFGS support is planned with a simple closure.
   - No automatic stopping and no per-step gradient clipping knob; users control loop length externally.
 
@@ -333,13 +371,14 @@ Device & Dtype
 - The helper never changes the device of the wrapped model; users move the model beforehand as needed (UnifiedSmplModel wraps a smplx model).
 
 Errors & Validation
-- set_keypoint_targets: accepts either name→tensor mapping or packed tensor.
-  Validates shapes ``(B,3)`` for named targets and ``(B,K,3)`` for packed
-  targets (K must match the model's intrinsic joint count excluding pelvis).
-  Enforces consistent batch size, validates optional ``weights``/``confidence``
-  broadcastability, and warns/ignores unknown joint names via the model’s
-  warn function when possible.
-- vposer_init: requires either ckpt_path or vposer_model; raises ValueError if both are None.
+- set_keypoint_targets: accepts only name→tensor mappings. Validates shapes
+  ``(B, 3)`` for each named target and enforces consistent batch size.
+  Validates optional ``weights``/``confidence`` according to the constraints:
+  mapping by joint name, or raw tensors of shape ``(B,)`` or ``(B, 1)`` (or
+  scalars). Warns/ignores unknown joint names via the model’s warn function
+  when possible.
+- vposer_init: requires a constructed ``VPoserModel`` instance; raises
+  ``TypeError`` if an incompatible object is provided.
 - init_fitting: raises ValueError if no trainable parameters were found (requires_grad=False on all provided tensors).
 
 Extensibility Points
@@ -362,9 +401,12 @@ targets = {
 helper.set_keypoint_targets(targets, weights={"left_wrist": 2.0})
 
 # Enable priors
-helper.set_pose_l2_reg(weight=1e-2)
-helper.vposer_init(ckpt_path="data/vposer/vposer-v2.ckpt")
-helper.vposer_set_weight(w_pose_fit=1.0, w_latent_l2=0.1)
+helper.set_reg_pose_l2(weight=1e-2)
+# Attach a preloaded VPoser model
+from smplx_toolbox.vposer.model import VPoserModel
+vposer = VPoserModel.from_checkpoint("data/vposer/vposer-v2.ckpt", map_location="auto")
+helper.vposer_init(vposer_model=vposer)
+helper.vposer_set_reg(w_pose_fit=1.0, w_latent_l2=0.1)
 
 # Prepare trainable parameters
 root = torch.zeros(B, 3, device=model.device, dtype=model.dtype, requires_grad=True)
@@ -378,6 +420,18 @@ out = status.output
 ```
 
 ```python
+# Or, provide per-sample raw weights with shape (B,) or (B, 1)
+weights_b = torch.full((B,), 0.5, device=model.device, dtype=model.dtype)
+helper.set_keypoint_targets(targets, weights=weights_b)
+
+# Control DOFs and regularization switches
+helper.set_dof_global_orient(True)
+helper.set_dof_global_translation(True)
+helper.set_dof_shape_deform(True)
+helper.set_reg_shape_l2(1e-2)
+```
+
+```python
 # Add a custom angle prior term (example)
 from smplx_toolbox.optimization.angle_prior_builder import AnglePriorLossBuilder
 
@@ -388,13 +442,7 @@ helper.set_custom_loss("angle_prior", angle_term, weight=0.2)
 helper.set_custom_loss("angle_prior", None)
 ```
 
-```python
-# Alternatively, configure targets via packed tensor matching NamedPose order
-K = len(model.get_joint_names(unified=True)) - 1  # pelvis excluded
-packed_targets = torch.randn(B, K, 3, device=model.device, dtype=model.dtype)
-packed_weights = torch.ones(B, K, device=model.device, dtype=model.dtype) * 0.5
-helper.set_keypoint_targets(packed_targets, weights=packed_weights, robust="gmof", rho=50.0)
-```
+
 
 Non‑Goals
 - No 2D keypoints or projection/camera optimization.
@@ -402,7 +450,7 @@ Non‑Goals
 
 Implementation Plan (high‑level)
 1) Create module src/smplx_toolbox/fitting/helper.py with the SmplKeypointFittingHelper class skeleton and strongly typed API.
-2) Implement configuration methods (targets with overwrite semantics — including robust args —, pose L2 via ``set_pose_l2_reg(weight)`` where 0 disables, VPoser via ``vposer_set_weight`` where 0 disables) with validation and internal term rebuilds; add custom loss registry (``set_custom_loss``, ``get_custom_loss``, ``get_custom_losses``).
+2) Implement configuration methods (targets with overwrite semantics — including robust args —, pose L2 via ``set_reg_pose_l2(weight)`` where 0 disables, VPoser via ``vposer_set_reg`` where 0 disables) with validation and internal term rebuilds; add custom loss registry (``set_custom_loss``, ``get_custom_loss``, ``get_custom_losses``).
 3) Implement init_fitting and iterator/generator that performs: forward → loss assembly → backward → optimizer step → status yield.
 4) Add FitStepStatus attrs type in src/smplx_toolbox/fitting/types.py.
 5) Add minimal unit tests that mock targets and run a few steps, ensuring iterator yields statuses and terms are computed; reuse patterns from unittests/fitting/test_keypoint_match.py.

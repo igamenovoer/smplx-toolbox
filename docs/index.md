@@ -29,6 +29,12 @@ This documentation is built with Material for MkDocs.
   - `SMPLXModel` – SMPL-X only, quick `to_mesh(output)` helper
   - `SMPLHModel` – SMPL-H only, body/hand joint helpers + `to_mesh(output)`
 
+## Fitting and Priors
+
+- Keypoint fitting helper: see `docs/fitting/helper.md` for an end-to-end helper that
+  manages targets, robust data terms, VPoser and L2 priors, DOF toggles, and iteration.
+- VPoser: see `docs/vposer.md` for `VPoserModel` usage and body pose mapping helpers.
+
 ## Code Layout
 
 - `src/smplx_toolbox/core/` – unified model, adapters, containers, constants

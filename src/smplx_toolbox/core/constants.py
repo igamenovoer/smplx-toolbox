@@ -432,8 +432,8 @@ class SMPLKeypoints:
         Keypoint confidence scores (typically tensor or array of shape [..., 24])
     """
 
-    keypoints: Any | None = field(default=None)
-    confidences: Any | None = field(default=None)
+    keypoints: Any | None = field(default=None)  # [..., 24, 3] keypoint positions
+    confidences: Any | None = field(default=None)  # [..., 24] confidence scores
 
     @classmethod
     def get_ordered_names(cls) -> list[str]:
@@ -465,8 +465,8 @@ class SMPLHKeypoints:
         Keypoint confidence scores (typically tensor or array of shape [..., 52])
     """
 
-    keypoints: Any | None = field(default=None)
-    confidences: Any | None = field(default=None)
+    keypoints: Any | None = field(default=None)  # [..., 52, 3] keypoint positions
+    confidences: Any | None = field(default=None)  # [..., 52] confidence scores
 
     @classmethod
     def get_ordered_names(cls) -> list[str]:
@@ -499,8 +499,8 @@ class SMPLXKeypoints:
         Keypoint confidence scores (typically tensor or array of shape [..., 55])
     """
 
-    keypoints: Any | None = field(default=None)
-    confidences: Any | None = field(default=None)
+    keypoints: Any | None = field(default=None)  # [..., 55, 3] keypoint positions
+    confidences: Any | None = field(default=None)  # [..., 55] confidence scores
 
     @classmethod
     def get_ordered_names(cls) -> list[str]:

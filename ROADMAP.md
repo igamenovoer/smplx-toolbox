@@ -20,13 +20,16 @@ To become the go-to toolkit for researchers, developers, and artists working wit
 
 ## Next Step (Priority)
 
-- Develop the Keypoint Fitting Helper to orchestrate end-to-end fitting flows
-  (configuration, scheduling, losses, priors, logging). See the design:
-  `context/tasks/features/fitting-helper/design-of-fitting-helper.md`.
+- Text2Motion skeleton interop: develop conversion utilities between the
+  Text2Motion skeleton and SMPL/SMPL-X skeletons (bidirectional where
+  possible), including joint name mapping, scale/axis conventions, and
+  robust fallbacks for missing joints. This enables reusing Text2Motion
+  datasets and outputs with SMPL-based pipelines. (Reference: search for
+  “Text2Motion skeleton” for canonical joint layouts and conventions.)
 
 ## Currently Working / Recent Changes
 
-Keypoint-Based Fitting (in place; refactors completed, validate on real data next)
+Keypoint-Based Fitting (completed; validate on real data next)
 - [x] Loss builders (under `src/smplx_toolbox/optimization/`)
   - [x] `KeypointMatchLossBuilder` (3D, unified names + packed native order)
   - [x] `ProjectedKeypointMatchLossBuilder` (2D via camera projection)
@@ -44,6 +47,11 @@ Keypoint-Based Fitting (in place; refactors completed, validate on real data nex
 - [x] Documentation
   - [x] `context/tasks/features/keypoint-match/task-vposer-prior.md` (single source of truth)
   - [x] `docs/vposer.md` (runtime usage and mapping helpers)
+  - [x] `docs/fitting/helper.md` (end-to-end keypoint fitting helper usage)
+  - [x] Updated smoke scripts under `tests/fitting/` to include visualization and
+        DOF toggles; helper scripts now align iteration budget for parity.
+  - [x] Updated docs on `NamedPose` (root-aware) and VPoser integration using
+        `VPoserModel.from_checkpoint`.
 
 Model Input Refactor
 - [x] Introduced `NamedPose` as the single intrinsic pose source (pelvis excluded)
@@ -55,11 +63,6 @@ Model Input Refactor
 Hints
 - [x] Added guidance: applying VPoser without affecting global orientation
       (`context/hints/smplx-kb/howto-apply-vposer-with-global-orient.md`)
-
-Pending next
-- [ ] Validate on real 2D/3D detections and full optimization schedules
-- [ ] Add targeted unit tests and minimal examples for each builder
-- [ ] Tune robustifier scales/default weights based on validation results
 
 ## Development Timeline
 
@@ -80,8 +83,10 @@ Pending next
 
 - [ ] **Model Conversion:**
   - [ ] Convert SMPL-H models to SMPL-X for both static and animated models.
-- [ ] **Keypoint Fitting Helper:**
-  - [ ] Implement the fitting helper component to manage schedules (stages, weights), priors (VPoser/shape/angle), robustifiers, and output artifacts (logs/meshes). See `context/tasks/features/fitting-helper/design-of-fitting-helper.md`.
+- [x] **Keypoint Fitting Helper:**
+  - [x] Implemented `SmplKeypointFittingHelper` to manage data terms, priors
+        (VPoser, L2 pose/shape), DOF toggles, custom terms, and iteration.
+        See `docs/fitting/helper.md` and tests under `unittests/fitting`.
 - [ ] **Animation:**
   - [ ] Define animation format for SMPL-H and SMPL-X.
   - [ ] Convert animation to and from BVH format.

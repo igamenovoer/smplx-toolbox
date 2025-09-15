@@ -369,14 +369,14 @@ class NamedPose:
       ``DeprecationWarning``; use ``intrinsic_pose`` instead.
     """
 
-    model_type: ModelType
-    intrinsic_pose: Tensor | None = None
-    root_pose: Tensor | None = None  # (B, 3)
-    batch_size: int = 1
+    model_type: ModelType  # SMPL family type governing joint set and sizes
+    intrinsic_pose: Tensor | None = None  # (B, N, 3) intrinsic joints (pelvis excluded)
+    root_pose: Tensor | None = None  # (B, 3) pelvis (global/root) AA rotation
+    batch_size: int = 1  # used only for default allocation when tensors are omitted
 
     # Internal mapping caches (exclude pelvis)
-    _name_to_index: dict[str, int] = field(init=False, factory=dict)
-    _index_to_name: list[str] = field(init=False, factory=list)
+    _name_to_index: dict[str, int] = field(init=False, factory=dict)  # mapping (name -> intrinsic index)
+    _index_to_name: list[str] = field(init=False, factory=list)  # intrinsic index -> name (pelvis removed)
 
     def __attrs_post_init__(self) -> None:
         # Build intrinsic joint order (exclude pelvis)
