@@ -29,6 +29,9 @@ import smplx
 import torch
 
 from smplx_toolbox.core.unified_model import UnifiedSmplInputs, UnifiedSmplModel
+from smplx_toolbox.core.constants import ModelType
+from smplx_toolbox.core import NamedPose
+from smplx_toolbox.vposer.model import VPoserModel
 from smplx_toolbox.visualization import SMPLVisualizer, add_connection_lines
 
 
@@ -80,11 +83,26 @@ def main() -> None:
         d = art.get(name, {})
         if not d:
             return
-        kw: dict[str, torch.Tensor] = {}
-        for key in ("root_orient", "pose_body", "left_hand_pose", "right_hand_pose", "trans"):
-            if key in d:
-                kw[key] = _to_tensor(d[key], device, dtype)
-        out = uni.forward(UnifiedSmplInputs(**kw))
+        # Map legacy keys to current UnifiedSmplInputs via NamedPose
+        npz: NamedPose | None = None
+        if "pose_body" in d:
+            pose_body = _to_tensor(d["pose_body"], device, dtype)
+            npz = VPoserModel.convert_pose_body_to_named_pose(pose_body.view(1, -1))
+            # Convert NamedPose to target model type if needed
+            try:
+                target_mt = ModelType(model_type.upper())
+            except Exception:
+                target_mt = ModelType.SMPLX
+            npz = npz.to_model_type(target_mt)
+        inputs = UnifiedSmplInputs(
+            named_pose=npz,
+            global_orient=_to_tensor(d["root_orient"], device, dtype).view(1, 3)
+            if "root_orient" in d
+            else None,
+            trans=_to_tensor(d["trans"], device, dtype).view(1, 3) if "trans" in d else None,
+            betas=_to_tensor(d["betas"], device, dtype).view(1, -1) if "betas" in d else None,
+        )
+        out = uni.forward(inputs)
         viz.add_mesh(out, style=args.style, color=color, opacity=1.0)
         with torch.no_grad():
             sel = uni.select_joints(out.joints, names=subset_names)[0]
