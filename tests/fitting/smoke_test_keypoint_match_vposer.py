@@ -20,6 +20,7 @@ Notes
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 from typing import Any, Iterable
 
 import numpy as np
@@ -44,17 +45,20 @@ class Params:
 
     # Data/optimization
     NOISE_SCALE: float = 0.3  # std of Gaussian noise for targets (meters)
-    STEPS: int = 250  # optimizer iterations
-    LR: float = 0.05  # Adam learning rate
+    STEPS: int = 300  # optimizer iterations
+    LR: float = 1e-3  # Adam learning rate
     L2_WEIGHT: float = 5e-3  # global L2 regularization weight on pose params
+    SHAPE_L2_WEIGHT: float = 1e-2  # L2 regularization weight on betas (shape)
     ROBUST_KIND: str = "gmof"  # "gmof" or "l2" (simple MSE); also supports "huber"
     ROBUST_RHO: float = 100.0  # scale parameter for robustifier (used for gmof/huber)
 
     # VPoser prior weights
-    # VPOSER_POSE_FIT: float = 0.1  # weight for self-reconstruction MSE
-    # VPOSER_LATENT_L2: float = 0.05  # weight for latent magnitude
-    VPOSER_POSE_FIT: float = 0  # weight for self-reconstruction MSE
-    VPOSER_LATENT_L2: float = 0  # weight for latent magnitude
+    VPOSER_POSE_FIT: float = 0.3  # weight for self-reconstruction MSE
+    VPOSER_LATENT_L2: float = 0.1  # weight for latent magnitude
+    
+    # use weight=0 to disable VPoser prior
+    # VPOSER_POSE_FIT: float = 0  # weight for self-reconstruction MSE
+    # VPOSER_LATENT_L2: float = 0  # weight for latent magnitude
 
     # Paths
     MODEL_ROOT: Path = Path("data/body_models")
@@ -71,9 +75,9 @@ class Params:
     LINE_OPACITY: float = 0.9
 
     # Trainable DOFs
-    ENABLE_GLOBAL_ORIENT: bool = False
-    ENABLE_GLOBAL_TRANSLATION: bool = False
-    ENABLE_SHAPE_DEFORMATION: bool = False
+    ENABLE_GLOBAL_ORIENT: bool = True
+    ENABLE_GLOBAL_TRANSLATION: bool = True
+    ENABLE_SHAPE_DEFORMATION: bool = True
 
 
 def _select_device() -> torch.device:
@@ -201,9 +205,12 @@ def _optimize_pose_to_targets(
         # Add VPoser term if available
         if term_vposer is not None:
             loss = loss + term_vposer(out)
-        # L2 reg on intrinsic pose only (keep global_orient free)
+        # L2 reg on intrinsic pose (keep global_orient free)
         reg = (npz.intrinsic_pose**2).sum()
         loss = loss + float(l2_weight) * reg
+        # Optional L2 on shape parameters
+        if betas is not None and float(Params.SHAPE_L2_WEIGHT) > 0:
+            loss = loss + float(Params.SHAPE_L2_WEIGHT) * (betas**2).sum()
         if i % 10 == 0 or i == steps - 1:
             try:
                 loss_val = float(loss.detach().item())
@@ -256,7 +263,10 @@ neutral_out = uni.forward(UnifiedSmplInputs())
 
 # Target keypoints
 subset_names = _movable_joint_names()
-torch.manual_seed(42)
+# Unique random seed per run to vary target noise
+_seed = uuid4().int & 0xFFFFFFFF
+torch.manual_seed(_seed)
+np.random.seed(_seed)
 targets = _select_targets(uni, neutral_out, subset_names, noise_scale=Params.NOISE_SCALE)
 
 # Optimize

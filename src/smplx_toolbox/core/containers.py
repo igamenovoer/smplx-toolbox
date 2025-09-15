@@ -431,34 +431,40 @@ class NamedPose:
     # Convenience API
     # -----------------
     def get_joint_pose(self, name: str) -> Tensor | None:
-        """Get a copy of the joint pose ``(B, 1, 3)`` for the given name.
+        """Get a view of the joint pose ``(B, 1, 3)`` for the given name.
 
         Returns None if the joint is not present for the current model type.
+        The returned tensor is a view into internal storage when available,
+        so in-place edits will mutate the corresponding internal pose.
         """
         if name == CoreBodyJoint.PELVIS.value:
             B = int(self.intrinsic_pose.shape[0]) if self.intrinsic_pose is not None else self.batch_size
-            pel = self.pelvis.view(B, 1, 3)
-            return pel.detach().clone()
+            # If root_pose is None, return zeros (not a view). Otherwise return a view.
+            if self.root_pose is None:
+                return torch.zeros((B, 1, 3))
+            return self.root_pose.view(B, 1, 3)
         idx = self.get_joint_index(name)
         if idx is None or self.intrinsic_pose is None:
             return None
-        return self.intrinsic_pose[:, idx : idx + 1, :].detach().clone()
+        return self.intrinsic_pose[:, idx : idx + 1, :]
 
     def get_joint_pose_by_index(self, index: int) -> Tensor:
-        """Get a copy of the joint pose by SMPL index (0=pelvis).
+        """Get a view of the joint pose by SMPL index (0=pelvis).
 
-        Returns a tensor of shape ``(B, 1, 3)``.
+        Returns a tensor of shape ``(B, 1, 3)`` that is a view when possible.
         """
         if index < 0:
             raise IndexError("index must be >= 0")
         if index == 0:
             B = int(self.intrinsic_pose.shape[0]) if self.intrinsic_pose is not None else self.batch_size
-            return self.pelvis.view(B, 1, 3).detach().clone()
+            if self.root_pose is None:
+                return torch.zeros((B, 1, 3))
+            return self.root_pose.view(B, 1, 3)
         # intrinsic indexing (shift by -1)
         j = index - 1
         if self.intrinsic_pose is None or j >= self.intrinsic_pose.shape[1]:
             raise IndexError("joint index out of range")
-        return self.intrinsic_pose[:, j : j + 1, :].detach().clone()
+        return self.intrinsic_pose[:, j : j + 1, :]
 
     def set_joint_pose_value(self, name: str, pose: Tensor | np.ndarray) -> bool:
         """Set the joint pose value by name without affecting gradients.

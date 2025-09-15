@@ -43,6 +43,11 @@ def test_named_pose_get_set_smplx() -> None:
     got = npz.get_joint_pose("left_eye_smplhf")
     assert got is not None and got.shape == (B, 1, 3)
     assert torch.allclose(got.view(B, 3), val)
+    # get_joint_pose returns a view; in-place edit should mutate internal pose
+    before = npz.get_joint_pose("left_eye_smplhf").clone()
+    got.add_(1.0)
+    after = npz.get_joint_pose("left_eye_smplhf")
+    assert torch.allclose(after - before, torch.ones_like(after))
 
     # Unknown names: getters -> None, setters -> KeyError
     assert npz.get_joint_pose("left_eye") is None
@@ -57,7 +62,7 @@ def test_named_pose_to_dict_view_semantics_smplh() -> None:
     # Pick a joint and mutate via view
     name = "left_index1"
     assert name in d
-    before = npz.get_joint_pose(name)
+    before = npz.get_joint_pose(name).clone()
     assert before is not None
     d[name].add_(1.0)
     after = npz.get_joint_pose(name)

@@ -19,6 +19,7 @@ Notes
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 from typing import Any, Iterable
 
 import numpy as np
@@ -46,6 +47,7 @@ class Params:
     STEPS: int = 100  # optimizer iterations
     LR: float = 0.05  # Adam learning rate
     L2_WEIGHT: float = 1e-2  # global L2 regularization weight on pose params
+    SHAPE_L2_WEIGHT: float = 1e-2  # L2 regularization weight on betas (shape)
     ROBUST_KIND: str = "gmof"  # "gmof" or "l2" (simple MSE); also supports "huber"
     ROBUST_RHO: float = 100.0  # scale parameter for robustifier (used for gmof/huber)
 
@@ -190,9 +192,12 @@ def _optimize_pose_to_targets(
         )
         # Data term
         loss = term(out)
-        # L2 regularization on intrinsic pose only (not on global_orient)
+        # L2 regularization on intrinsic pose (not on global_orient)
         reg: torch.Tensor = (npz.intrinsic_pose**2).sum()
         loss = loss + float(l2_weight) * reg
+        # Optional L2 regularization on shape parameters (betas)
+        if betas is not None and float(Params.SHAPE_L2_WEIGHT) > 0:
+            loss = loss + float(Params.SHAPE_L2_WEIGHT) * (betas**2).sum()
         if i % 10 == 0 or i == steps - 1:
             try:
                 loss_val = float(loss.detach().item())
@@ -270,7 +275,10 @@ for model_type in Params.MODEL_TYPES:
     neutral_out = uni.forward(UnifiedSmplInputs())
 
     # Generate targets from neutral + Gaussian noise
-    torch.manual_seed(42)
+    # Unique random seed per run to vary target noise
+    _seed = uuid4().int & 0xFFFFFFFF
+    torch.manual_seed(_seed)
+    np.random.seed(_seed)
     targets = _select_targets(uni, neutral_out, subset_names, noise_scale=Params.NOISE_SCALE)
 
     # Fit
