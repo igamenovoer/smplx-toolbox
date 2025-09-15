@@ -285,13 +285,12 @@ class UnifiedSmplInputs:
         parts: list[Tensor] = []
         for e in CoreBodyJoint:
             if e == CoreBodyJoint.PELVIS:
-                # Exclude pelvis; body_pose is 21 joints (63 DoF)
-                continue
-            g = npz.get_joint_pose(e.value)
-            if g is None:
-                parts.append(torch.zeros((B, 1, 3), dtype=npz.intrinsic_pose.dtype))
+                continue  # body excludes pelvis
+            idx = npz.get_joint_index(e.value)
+            if idx is None:
+                parts.append(torch.zeros((B, 1, 3), dtype=npz.intrinsic_pose.dtype, device=npz.intrinsic_pose.device))
             else:
-                parts.append(g)
+                parts.append(npz.intrinsic_pose[:, idx : idx + 1, :])
         body = torch.cat(parts, dim=1)
         return body.reshape(B, 63)
 
@@ -303,13 +302,11 @@ class UnifiedSmplInputs:
         def collect(names: list[str]) -> Tensor:
             parts: list[Tensor] = []
             for name in names:
-                g = npz.get_joint_pose(name)
-                if g is None:
-                    parts.append(
-                        torch.zeros((B, 1, 3), dtype=npz.intrinsic_pose.dtype)
-                    )
+                idx = npz.get_joint_index(name)
+                if idx is None:
+                    parts.append(torch.zeros((B, 1, 3), dtype=npz.intrinsic_pose.dtype, device=npz.intrinsic_pose.device))
                 else:
-                    parts.append(g)
+                    parts.append(npz.intrinsic_pose[:, idx : idx + 1, :])
             return torch.cat(parts, dim=1).reshape(B, 45)
 
         left_names = [e.value for e in HandFingerJoint if e.name.startswith("LEFT_")]
@@ -325,12 +322,14 @@ class UnifiedSmplInputs:
         if npz.intrinsic_pose is None:
             return None, None, None
         B = int(npz.intrinsic_pose.shape[0])
-        jaw = npz.get_joint_pose(FaceJoint.JAW.value)
-        le = npz.get_joint_pose(FaceJoint.LEFT_EYE_SMPLHF.value)
-        re = npz.get_joint_pose(FaceJoint.RIGHT_EYE_SMPLHF.value)
-        jaw_v = jaw.view(B, 3) if jaw is not None else None
-        le_v = le.view(B, 3) if le is not None else None
-        re_v = re.view(B, 3) if re is not None else None
+        def one(name: str) -> Tensor | None:
+            idx = npz.get_joint_index(name)
+            if idx is None:
+                return None
+            return npz.intrinsic_pose[:, idx : idx + 1, :].view(B, 3)
+        jaw_v = one(FaceJoint.JAW.value)
+        le_v = one(FaceJoint.LEFT_EYE_SMPLHF.value)
+        re_v = one(FaceJoint.RIGHT_EYE_SMPLHF.value)
         return jaw_v, le_v, re_v
 
 
