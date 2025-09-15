@@ -49,6 +49,7 @@ inspect exactly what VPoser consumes/produces without memorizing indices.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -324,6 +325,36 @@ class VPoserModel(nn.Module):
         return out
 
     # ------------------------------------------------------------------
+    # Checkpoint convenience
+    # ------------------------------------------------------------------
+    @classmethod
+    def from_checkpoint(
+        cls, ckpt_path: str | Path, *, map_location: str | torch.device = "cpu"
+    ) -> "VPoserModel":
+        """Load a VPoser v2 checkpoint into a VPoserModel.
+
+        This is a convenience wrapper around :func:`smplx_toolbox.vposer.load_vposer`.
+
+        Parameters
+        ----------
+        ckpt_path : str | Path
+            Filesystem path to the ``.ckpt`` file.
+        map_location : str | torch.device, optional
+            Device to map the loaded tensors to. Supports ``"cpu"``, ``"cuda"``,
+            ``"mps"`` (Apple Silicon), or ``"auto"`` for automatic selection via
+            ``utils.select_device()``. Defaults to ``"cpu"``.
+
+        Returns
+        -------
+        VPoserModel
+            A model with weights loaded and set to evaluation mode.
+        """
+        # Local import to avoid import cycle at module load time
+        from .loader import load_vposer
+
+        return load_vposer(str(ckpt_path), map_location=map_location)
+
+    # ------------------------------------------------------------------
     # Convenience utilities for NamedPose interop
     # ------------------------------------------------------------------
     @staticmethod
@@ -364,9 +395,9 @@ class VPoserModel(nn.Module):
             CoreBodyJoint.RIGHT_WRIST,
         ]
         # Extract from named pose; if any name missing, use zeros
-        B = npz.packed_pose.shape[0]
-        device = npz.packed_pose.device
-        dtype = npz.packed_pose.dtype
+        B = npz.intrinsic_pose.shape[0]
+        device = npz.intrinsic_pose.device
+        dtype = npz.intrinsic_pose.dtype
         parts: list[Tensor] = []
         for e in body_joints:
             g = npz.get_joint_pose(e.value)

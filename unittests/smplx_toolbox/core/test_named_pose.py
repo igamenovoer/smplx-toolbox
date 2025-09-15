@@ -25,8 +25,8 @@ from smplx_toolbox.core import NamedPose
 )
 def test_named_pose_init_and_shapes(mt: ModelType, expected_n: int) -> None:
     npz = NamedPose(model_type=mt, batch_size=2)
-    assert npz.packed_pose is not None
-    assert npz.packed_pose.shape == (2, expected_n, 3)
+    assert npz.intrinsic_pose is not None
+    assert npz.intrinsic_pose.shape == (2, expected_n, 3)
 
 
 def test_named_pose_get_set_smplx() -> None:
@@ -68,15 +68,20 @@ def test_named_pose_to_dict_view_semantics_smplh() -> None:
 def test_named_pose_name_index_helpers_and_errors() -> None:
     npz = NamedPose(model_type=ModelType.SMPL)
     # Name/index round trip
-    idxs = list(range(npz.packed_pose.shape[1]))  # type: ignore[union-attr]
-    names = npz.get_joint_names(idxs)
-    assert len(names) == len(idxs)
-    r = npz.get_joint_indices(names)
-    assert r == idxs
+    # get_joint_name now follows SMPL indexing (0=pelvis)
+    assert npz.get_joint_name(0) == "pelvis"
+    # For any intrinsic joint name, index == get_joint_index(name) + 1
+    example_name = npz.get_joint_names([1])[0]  # name at SMPL index 1
+    intrinsic_idx = npz.get_joint_index(example_name)
+    assert intrinsic_idx is not None and intrinsic_idx + 1 == 1
     # Index error
     with pytest.raises(IndexError):
         _ = npz.get_joint_name(999)
-    # Shape error
-    # Pelvis is not part of intrinsic pose; setter must raise KeyError
-    with pytest.raises(KeyError):
-        _ = npz.set_joint_pose_value("pelvis", torch.randn(2, 3))
+    # Pelvis setter is allowed; should set root_pose
+    B = 2
+    npz2 = NamedPose(model_type=ModelType.SMPL, batch_size=B)
+    root = torch.randn(B, 3)
+    ok = npz2.set_joint_pose_value("pelvis", root)
+    assert ok is True
+    assert npz2.pelvis.shape == (B, 3)
+    assert torch.allclose(npz2.pelvis, root)

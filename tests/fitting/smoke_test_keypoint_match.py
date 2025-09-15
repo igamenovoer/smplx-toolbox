@@ -62,6 +62,11 @@ class Params:
     LINE_WIDTH: int = 2
     LINE_OPACITY: float = 0.9
 
+    # Trainable DOFs
+    ENABLE_GLOBAL_ORIENT: bool = True
+    ENABLE_GLOBAL_TRANSLATION: bool = True
+    ENABLE_SHAPE_DEFORMATION: bool = True
+
 
 def _left_wrist_name() -> str:
     """Return the unified joint name for the left wrist keypoint."""
@@ -122,12 +127,33 @@ def _optimize_pose_to_targets(
     device = model.device
     dtype = model.dtype
 
-    # Trainable parameters: NamedPose (intrinsic pose) + separate global_orient
+    # Trainable parameters: intrinsic pose + optional global orient and translation
     npz = NamedPose(model_type=ModelType(str(model.model_type)), batch_size=1)
-    npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
-    global_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+    npz.intrinsic_pose = torch.nn.Parameter(torch.zeros_like(npz.intrinsic_pose))
+    global_orient = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_ORIENT
+        else None
+    )
+    translation = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_TRANSLATION
+        else None
+    )
 
-    params = [npz.packed_pose, global_orient]
+    params = [npz.intrinsic_pose]
+    if global_orient is not None:
+        params.append(global_orient)
+    if translation is not None:
+        params.append(translation)
+    betas = None
+    if Params.ENABLE_SHAPE_DEFORMATION:
+        try:
+            n_betas = int(model.num_betas)
+        except Exception:
+            n_betas = 10
+        betas = torch.nn.Parameter(torch.zeros((1, n_betas), device=device, dtype=dtype))
+        params.append(betas)
     opt = torch.optim.Adam(params, lr=lr)
 
     # Loss builder
@@ -141,7 +167,12 @@ def _optimize_pose_to_targets(
 
     # Initial eval
     out0 = model.forward(
-        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+        UnifiedSmplInputs(
+            named_pose=npz,
+            global_orient=(global_orient.detach() if global_orient is not None else None),
+            trans=(translation.detach() if translation is not None else None),
+            betas=(betas.detach() if betas is not None else None),
+        )
     )
     with torch.no_grad():
         loss0 = float(term(out0).item())
@@ -149,11 +180,18 @@ def _optimize_pose_to_targets(
     # Optimize
     for i in range(steps):
         opt.zero_grad()
-        out = model.forward(UnifiedSmplInputs(named_pose=npz, global_orient=global_orient))
+        out = model.forward(
+            UnifiedSmplInputs(
+                named_pose=npz,
+                global_orient=global_orient if global_orient is not None else None,
+                trans=translation if translation is not None else None,
+                betas=betas if betas is not None else None,
+            )
+        )
         # Data term
         loss = term(out)
         # L2 regularization on intrinsic pose only (not on global_orient)
-        reg: torch.Tensor = (npz.packed_pose**2).sum()
+        reg: torch.Tensor = (npz.intrinsic_pose**2).sum()
         loss = loss + float(l2_weight) * reg
         if i % 10 == 0 or i == steps - 1:
             try:
@@ -165,7 +203,12 @@ def _optimize_pose_to_targets(
         opt.step()
 
     out_final = model.forward(
-        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+        UnifiedSmplInputs(
+            named_pose=npz,
+            global_orient=(global_orient.detach() if global_orient is not None else None),
+            trans=(translation.detach() if translation is not None else None),
+            betas=(betas.detach() if betas is not None else None),
+        )
     )
     with torch.no_grad():
         loss_final = float(term(out_final).item())

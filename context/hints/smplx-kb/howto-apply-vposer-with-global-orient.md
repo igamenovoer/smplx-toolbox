@@ -35,7 +35,7 @@ from smplx_toolbox.vposer.model import VPoserModel
 
 # Build trainable NamedPose
 npz = NamedPose(model_type=ModelType.SMPLX, batch_size=B)
-npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
+npz.intrinsic_pose = torch.nn.Parameter(torch.zeros_like(npz.intrinsic_pose))
 
 # Forward via UnifiedSmplInputs; global_orient is a view of npz.root_orient
 inputs = UnifiedSmplInputs(named_pose=npz, betas=betas)
@@ -49,7 +49,7 @@ vp_builder = VPoserPriorLossBuilder.from_vposer(model, vposer)
 term_vposer = vp_builder.by_pose(pose_body, w_pose_fit, w_latent_l2)
 
 # Regularize global orientation separately (e.g., simple L2)
-reg_global = (npz.root_orient**2).sum()
+reg_global = (npz.pelvis**2).sum()
 loss = data_term(out) + term_vposer(out) + lambda_reg * reg_global
 ```
 
@@ -70,7 +70,7 @@ If you add a convenience wrapper, keep global orientation excluded:
 
 ## Step‑by‑step checklist
 
-1) Build or optimize a single `NamedPose` (`npz.packed_pose`), not separate tensors.
+1) Build or optimize a single `NamedPose` (`npz.intrinsic_pose`), not separate tensors.
 2) Pass `UnifiedSmplInputs(named_pose=npz, ...)` to the unified model.
 3) Derive `pose_body` from `npz` (exclude pelvis) and apply the VPoser prior to it only.
 4) Regularize `npz.root_orient` separately (L2, or other priors if desired).
@@ -78,7 +78,6 @@ If you add a convenience wrapper, keep global orientation excluded:
 
 ## Extra tips
 
-- The pelvis AA (`npz.root_orient`) is a view into `npz.packed_pose`, so gradients propagate correctly.
+- The pelvis AA can be stored in `npz.root_pose` (exposed as `npz.pelvis`). Keep it separate from VPoser inputs.
 - If you need a detached copy for logging or specific constraints, call `.detach()` or `.clone()` appropriately.
 - For SMPL (no face/hands), body pose is still 63 DoF; VPoser expects that.
-

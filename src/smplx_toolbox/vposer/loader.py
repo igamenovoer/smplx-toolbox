@@ -108,7 +108,10 @@ def load_vposer(
     ckpt_path : str
         Filesystem path to the ``.ckpt`` file.
     map_location : str | torch.device, optional
-        Device location to load the tensors (default: ``"cpu"``).
+        Device location to load the tensors. Supports ``"cpu"``, ``"cuda"``,
+        ``"mps"`` (Apple Silicon), or a :class:`torch.device`. If ``"auto"`` is
+        passed, the device is selected via ``utils.select_device()``. Defaults to
+        ``"cpu"``.
 
     Returns
     -------
@@ -122,6 +125,13 @@ def load_vposer(
     RuntimeError
         If unexpected keys are encountered when loading weights.
     """
+    # Resolve auto device if requested
+    if isinstance(map_location, str) and map_location.lower() == "auto":
+        try:
+            from smplx_toolbox.utils.device import select_device
+            map_location = select_device()
+        except Exception:
+            map_location = "cpu"
     ckpt: Any = torch.load(ckpt_path, map_location=map_location)
     if not isinstance(ckpt, dict) or "state_dict" not in ckpt:
         raise ValueError("Invalid VPoser checkpoint format: missing state_dict")

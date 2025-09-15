@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplOutput
+from smplx_toolbox.core import UnifiedSmplModel, UnifiedSmplOutput, NamedPose
+from smplx_toolbox.vposer.model import VPoserModel
 
 from .builders_base import BaseLossBuilder
 
@@ -22,18 +23,18 @@ class VPoserPriorLossBuilder(BaseLossBuilder):
 
     def __init__(self) -> None:
         super().__init__()
-        self.m_vposer: Any | None = None
+        self.m_vposer: VPoserModel | None = None
 
     @classmethod
     def from_vposer(
-        cls, model: UnifiedSmplModel, vposer: nn.Module
+        cls, model: UnifiedSmplModel, vposer: VPoserModel
     ) -> VPoserPriorLossBuilder:
         instance = cls.from_model(model)
         instance.m_vposer = vposer
         return instance
 
     @property
-    def vposer(self) -> Any:
+    def vposer(self) -> VPoserModel:
         """Access the underlying VPoser model (read-only)."""
         if self.m_vposer is None:
             raise ValueError("VPoser not set. Use from_vposer(model, vposer)")
@@ -45,20 +46,11 @@ class VPoserPriorLossBuilder(BaseLossBuilder):
         vposer = self.m_vposer
         assert vposer is not None
         out = vposer.decode(latent)
-        if isinstance(out, dict):
-            # Common field names
-            for key in ("pose_body", "pose_body_tensor", "pose_body_decoded"):
-                if key in out:
-                    val = out[key]
-                    assert isinstance(val, torch.Tensor)
-                    return val
-            # Otherwise fallback: first tensor value
-            for v in out.values():
-                if isinstance(v, torch.Tensor):
-                    return v
-            raise ValueError("VPoser.decode returned dict without tensor values")
-        assert isinstance(out, torch.Tensor)
-        return out
+        # Our VPoserModel.decode returns a dict with 'pose_body' and 'pose_body_matrot'
+        val = out.get("pose_body", None)
+        if not isinstance(val, torch.Tensor):
+            raise ValueError("VPoser.decode did not return 'pose_body' tensor")
+        return val
 
     def encode_pose_to_latent(self, pose: Tensor) -> Tensor:
         """Encode a body AA pose to a latent (uses mean of the posterior).
@@ -72,6 +64,10 @@ class VPoserPriorLossBuilder(BaseLossBuilder):
             pose_flat = pose
         else:
             raise ValueError("pose must be (B,63) or (B,21,3) axis-angle body pose")
+        # Move to VPoser's device/dtype before encoding
+        vp_param = next(vposer.parameters(), None)
+        if vp_param is not None:
+            pose_flat = pose_flat.to(device=vp_param.device, dtype=vp_param.dtype)
         q_z = vposer.encode(pose_flat)
         z = cast(Tensor, q_z.mean if hasattr(q_z, "mean") else q_z)
         return z
@@ -161,6 +157,10 @@ class VPoserPriorLossBuilder(BaseLossBuilder):
 
                 vposer = self.m_outer.m_vposer
                 assert vposer is not None
+                # Move to the VPoser device/dtype
+                vp_param = next(vposer.parameters(), None)
+                if vp_param is not None:
+                    p_flat = p_flat.to(device=vp_param.device, dtype=vp_param.dtype)
                 q_z = vposer.encode(p_flat)
                 z = cast(Tensor, q_z.mean if hasattr(q_z, "mean") else q_z)
 
@@ -177,3 +177,14 @@ class VPoserPriorLossBuilder(BaseLossBuilder):
             w1.to(self.device, self.dtype),
             w2.to(self.device, self.dtype),
         )
+
+    def by_named_pose(
+        self, npz: NamedPose, w_pose_fit: float | Tensor, w_latent_l2: float | Tensor
+    ) -> nn.Module:
+        """Convenience: Build prior from a NamedPose by extracting body pose.
+
+        Uses our VPoserModel mapping utilities to convert the NamedPose to a
+        63‑DoF body axis‑angle and then delegates to :meth:`by_pose`.
+        """
+        pose_body = VPoserModel.convert_named_pose_to_pose_body(npz)
+        return self.by_pose(pose_body, w_pose_fit, w_latent_l2)

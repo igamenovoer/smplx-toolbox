@@ -34,7 +34,6 @@ from smplx_toolbox.optimization import (
     KeypointMatchLossBuilder,
     VPoserPriorLossBuilder,
 )
-from smplx_toolbox.vposer import load_vposer
 from smplx_toolbox.vposer.model import VPoserModel
 from smplx_toolbox.visualization import SMPLVisualizer, add_connection_lines
 from smplx_toolbox.utils import select_device
@@ -52,8 +51,10 @@ class Params:
     ROBUST_RHO: float = 100.0  # scale parameter for robustifier (used for gmof/huber)
 
     # VPoser prior weights
-    VPOSER_POSE_FIT: float = 0.1  # weight for self-reconstruction MSE
-    VPOSER_LATENT_L2: float = 0.05  # weight for latent magnitude
+    # VPOSER_POSE_FIT: float = 0.1  # weight for self-reconstruction MSE
+    # VPOSER_LATENT_L2: float = 0.05  # weight for latent magnitude
+    VPOSER_POSE_FIT: float = 0  # weight for self-reconstruction MSE
+    VPOSER_LATENT_L2: float = 0  # weight for latent magnitude
 
     # Paths
     MODEL_ROOT: Path = Path("data/body_models")
@@ -68,6 +69,11 @@ class Params:
     TARGET_POINT_SIZE_PX: int = 12
     LINE_WIDTH: int = 2
     LINE_OPACITY: float = 0.9
+
+    # Trainable DOFs
+    ENABLE_GLOBAL_ORIENT: bool = False
+    ENABLE_GLOBAL_TRANSLATION: bool = False
+    ENABLE_SHAPE_DEFORMATION: bool = False
 
 
 def _select_device() -> torch.device:
@@ -120,12 +126,33 @@ def _optimize_pose_to_targets(
     device = model.device
     dtype = model.dtype
 
-    # Trainable parameters: NamedPose + separate global_orient
+    # Trainable parameters: intrinsic pose + optional global orient and translation
     npz = NamedPose(model_type=ModelType(str(model.model_type)), batch_size=1)
-    npz.packed_pose = torch.nn.Parameter(torch.zeros_like(npz.packed_pose))
-    global_orient = torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+    npz.intrinsic_pose = torch.nn.Parameter(torch.zeros_like(npz.intrinsic_pose))
+    global_orient = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_ORIENT
+        else None
+    )
+    translation = (
+        torch.nn.Parameter(torch.zeros((1, 3), device=device, dtype=dtype))
+        if Params.ENABLE_GLOBAL_TRANSLATION
+        else None
+    )
 
-    params = [npz.packed_pose, global_orient]
+    params = [npz.intrinsic_pose]
+    if global_orient is not None:
+        params.append(global_orient)
+    if translation is not None:
+        params.append(translation)
+    betas = None
+    if Params.ENABLE_SHAPE_DEFORMATION:
+        try:
+            n_betas = int(model.num_betas)
+        except Exception:
+            n_betas = 10
+        betas = torch.nn.Parameter(torch.zeros((1, n_betas), device=device, dtype=dtype))
+        params.append(betas)
     opt = torch.optim.Adam(params, lr=lr)
 
     # Loss: data
@@ -142,16 +169,19 @@ def _optimize_pose_to_targets(
         print(f"[smoke] VPoser ckpt not found at {vposer_ckpt} — skipping VPoser prior.")
         term_vposer = None
     else:
-        vposer = load_vposer(str(vposer_ckpt), map_location=device)
-        vposer.to(device=device)
-        vposer.eval()
+        vposer = VPoserModel.from_checkpoint(vposer_ckpt, map_location=device)
         vp_builder = VPoserPriorLossBuilder.from_vposer(model, vposer)
         pose_body = VPoserModel.convert_named_pose_to_pose_body(npz)
         term_vposer = vp_builder.by_pose(pose_body, w_pose_fit, w_latent_l2)
 
     # Initial eval
     out0 = model.forward(
-        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+        UnifiedSmplInputs(
+            named_pose=npz,
+            global_orient=(global_orient.detach() if global_orient is not None else None),
+            trans=(translation.detach() if translation is not None else None),
+            betas=(betas.detach() if betas is not None else None),
+        )
     )
     with torch.no_grad():
         loss0 = float(term_data(out0).item())
@@ -159,13 +189,20 @@ def _optimize_pose_to_targets(
     # Optimize
     for i in range(steps):
         opt.zero_grad()
-        out = model.forward(UnifiedSmplInputs(named_pose=npz, global_orient=global_orient))
+        out = model.forward(
+            UnifiedSmplInputs(
+                named_pose=npz,
+                global_orient=global_orient if global_orient is not None else None,
+                trans=translation if translation is not None else None,
+                betas=betas if betas is not None else None,
+            )
+        )
         loss = term_data(out)
         # Add VPoser term if available
         if term_vposer is not None:
             loss = loss + term_vposer(out)
         # L2 reg on intrinsic pose only (keep global_orient free)
-        reg = (npz.packed_pose**2).sum()
+        reg = (npz.intrinsic_pose**2).sum()
         loss = loss + float(l2_weight) * reg
         if i % 10 == 0 or i == steps - 1:
             try:
@@ -177,7 +214,12 @@ def _optimize_pose_to_targets(
         opt.step()
 
     out_final = model.forward(
-        UnifiedSmplInputs(named_pose=npz, global_orient=global_orient.detach())
+        UnifiedSmplInputs(
+            named_pose=npz,
+            global_orient=(global_orient.detach() if global_orient is not None else None),
+            trans=(translation.detach() if translation is not None else None),
+            betas=(betas.detach() if betas is not None else None),
+        )
     )
     with torch.no_grad():
         loss_final = float(term_data(out_final).item())

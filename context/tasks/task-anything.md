@@ -1,22 +1,28 @@
-# Implement helper class for keypoint-based smpl fitting
+# Revise `NamedPose` class
 
-## Purpose
-we are going to write a helper class that can be used to:
-- build loss terms for keypoint matching, and internally keep track of all the loss terms
-- apply vposer prior, l2 regularization on pose, etc.
-- run the optimization loop using simple interface
+we need to revise the `NamedPose` class (src/smplx_toolbox/core/containers.py) with the following changes.
 
-the purpose of this class is to reduce the amount of boilerplate code needed to run keypoint-based fitting.
+## Allow to store information about the root joint (pelvis)
 
-## requirements
-- this is ONLY for 3d keypoint fitting, should work on SMPL, SMPL-H, SMPL-X models
-- the `helper` class should be initialized with a smpl model
-- for vposer prior, user can provide the checkpoint path or a pre-loaded vposer model
-- user can set keypoint target positions, by specifying the keypoint names and target positions, and the fitting weight, and unset them if needed.
-- user can set l2 reguilarization on pose, and can unset it if needed
-- user can choose to enable/disable vposer prior, and can set the weight
-- the run the optimization loop, the user first call `step_iter=init_fitting(smpl_params: UnifiedSmplInputs)` to get an iterator, then call `next(step_iter)` to run one step of optimization, the optimization status will be returned as a `attrs` structure (see `.magic-context/instructions/attrs-usage-guide.md`), and user uses standard python iterator interface to run the optimization loop and detect when the optimization is done. `smpl_params` is the initial parameters to start the optimization, user can set `requires_grad=True` on the parameters they want to optimize, and also the initial values are given in this input.
-- user can also get all the loss terms and their weights, if user wants to build their own optimization loop externally.
+the current `NamedPose` class is designed to only store intrinsic pose information (i.e., relative rotations of joints), and it does not store any information about the root joint (pelvis). This is inconvenient in some scenarios, as user will always find some other way to store the pelvis information (e.g., as a separate tensor).
 
-## Reference
-- demo of fitting: `tests/fitting/*.py`
+besides, we need to make the joint indices consistent with SMPL definitions, it defines pelvis as the root joint (index 0), while in our current `NamedPose` design, pelvis is excluded from the pose representation, so all other joints are shifted by -1 index. For indices definition, see `context/hints/smplx-kb/compare-smpl-skeleton.md`.
+
+### the current design of `NamedPose` is as follows:
+- it has a python property pelvis, which always returns a zero tensor of shape (B, 3)
+- in its getters (e.g., get_joint_pose()), it refuses to return the pelvis joint (raise error), to force users to handle it separately
+
+### change it into:
+- rename the `.packed_pose` member variable into `.intrinsic_pose`, to clarify that it only stores intrinsic pose, semantic is the same as before
+- add a new member variable `.root_pose` of shape (B, 3), to represent the global orientation of the pelvis
+- in property `.pelvis`, return the actual pelvis rotation stored in `.root_pose`
+- allow getters (e.g., get_joint_pose()) to return the pelvis joint as well, if requested
+- `.root_pose` can be None, in which case the pelvis is assumed to be zero (same as before)
+
+### member function behavior changes:
+- pose getters by name, will now return pelvis if requested
+- pose getters by index, will follow SMPL indexing, see `context/hints/smplx-kb/compare-smpl-skeleton.md` for index mapping, basically 0 for pelvis, and all other joints shifted by +1 index (index k is for .intrinsic_pose[k-1] except for k=0)
+- `to_dict(pelvis_pose:Tensor|None=None)` will include pelvis anyway, no `with_pelvis` argument, if pelvis_pose is given, then use it as the pelvis rotation, otherwise use self.pelvis
+
+### add these functions:
+- `to_full_pose(pelvis_pose:Tensor|None = None) -> Tensor`, which returns a packed pose tensor of shape (B, N, 3), where N is the number of joints including pelvis if with_root is True (use torch.cat() to prepend pelvis to intrinsic_pose). If pelvis_pose (shape=(B,3)) is given, then use it as the pelvis rotation, otherwise use self.pelvis. In this way, we allow user to store pelvis rotation separately, but still can get a full pose tensor when needed.

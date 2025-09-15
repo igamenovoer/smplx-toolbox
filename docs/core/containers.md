@@ -5,35 +5,40 @@ The unified pipeline uses typed containers to make inputs/outputs explicit and s
 ## UnifiedSmplInputs
 
 Holds a single `NamedPose` as the preferred source of intrinsic pose (pelvis excluded)
-and derives SMPL/SMPL‑H/SMPL‑X kwargs from it. You can inspect/edit joint AAs via
-`named_pose.packed_pose` and convenience getters/setters on `NamedPose`.
+and derives SMPL/SMPL‑H/SMPL‑X kwargs from it. Inspect/edit joint AAs via
+`named_pose.intrinsic_pose` and convenience getters/setters on `NamedPose`. The
+pelvis rotation can be carried separately in `named_pose.root_pose`.
 
 Segmented pose fields have been removed. Provide global orientation separately via
 `global_orient: (B, 3)`. Missing segments are zero‑filled as needed for the target model.
 
 Orientation
-- Use `inputs.global_orient` for the `(B, 3)` global orientation (pelvis). `NamedPose`
-  stores intrinsic joints only and excludes pelvis by design.
+- Use `inputs.global_orient` for `(B, 3)` global orientation (pelvis). If unset and
+  `named_pose.root_pose` is present, it is used automatically.
 
 ::: smplx_toolbox.core.containers.UnifiedSmplInputs
 
 ## NamedPose
 
 A lightweight utility for inspecting and editing intrinsic axis‑angle poses `(B, N, 3)`
-by joint name (pelvis excluded), using the model type’s joint namespace.
+by joint name (pelvis excluded), using the model type’s joint namespace. Stores
+the pelvis rotation separately in `root_pose: (B, 3)`.
 
 Key conversion helper
 - `to_model_type(smpl_type, copy=False) -> NamedPose`
-  - Converts the instance to another model type by joint name.
-  - When `copy=False`, the returned `packed_pose` is built from views/concats of views so gradients through it flow back to the source where joints overlap (superset targets are composed via `torch.cat`).
-  - When `copy=True`, values are cloned so the result is independent.
+  - Converts to another model type by joint name. Intrinsic pose uses views when
+    `copy=False` to preserve gradient flow; clones when `copy=True`.
+- `to_full_pose(pelvis_pose: Tensor | None = None) -> Tensor`
+  - Returns full pose `(B, N+1, 3)` by prepending pelvis (from `pelvis_pose` or
+    `root_pose` if present, zeros otherwise).
 
 ::: smplx_toolbox.core.containers.NamedPose
 
 Additional notes and helpers
-- `to_dict(with_pelvis: bool = False)` excludes pelvis by default; when set, includes a zero‑AA pelvis entry.
-- `pelvis` property returns zero AA `(B, 3)` for convenience when constructing full poses for LBS.
-- Getters/setters for `'pelvis'` raise `KeyError` to emphasize it is not part of the intrinsic pose.
+- `to_dict(pelvis_pose: Tensor | None = None)` includes pelvis by default (uses
+  `pelvis_pose` if given, else `root_pose`/zeros).
+- `pelvis` property returns `(B, 3)` from `root_pose` (or zeros if unset).
+- Getters now accept `'pelvis'`; setters on `'pelvis'` write `root_pose`.
 
 ## UnifiedSmplOutput
 
