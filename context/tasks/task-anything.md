@@ -1,28 +1,84 @@
-# Revise `NamedPose` class
+# Adapting FlowMDM output to Smpl/Smpl-H/Smpl-X models
 
-we need to revise the `NamedPose` class (src/smplx_toolbox/core/containers.py) with the following changes.
+## Resources
+- `FlowMDM` source code: `context/refcode/FlowMDM/`
+- how to run `FlowMDM`: see `pyproject.toml`, there are tasks defined to run FlowMDM specifically
+- FlowMDM skeleton output format: 
+  - `context/refcode/FlowMDM/explain/howto-interpret-flowmdm-output.md`
+  - `context/refcode/FlowMDM/explain/about-3d-model-keypoint-topology.md`
+  - `context/refcode/FlowMDM/explain/about-smpl-usage-in-flowmdm.md`
+- Our unified smpl model:
+  - source code: `src/smplx_toolbox/core/unified_model.py`
+  - documentation: `docs/unified_model.md`
+  - skeleton mapping: `context/hints/smplx-kb/compare-smpl-skeleton.md`
 
-## Allow to store information about the root joint (pelvis)
+```toml
+# pyproject.toml, FlowMDM tasks
 
-the current `NamedPose` class is designed to only store intrinsic pose information (i.e., relative rotations of joints), and it does not store any information about the root joint (pelvis). This is inconvenient in some scenarios, as user will always find some other way to store the pelvis information (e.g., as a separate tensor).
+# Run commands in FlowMDM dir - use for FlowMDM scripts that need relative paths
+flowmdm-exec = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest", description = "Execute arbitrary command in FlowMDM directory with latest environment. Usage: pixi run flowmdm-exec -- <command>" }
 
-besides, we need to make the joint indices consistent with SMPL definitions, it defines pelvis as the root joint (index 0), while in our current `NamedPose` design, pelvis is excluded from the pose representation, so all other joints are shifted by -1 index. For indices definition, see `context/hints/smplx-kb/compare-smpl-skeleton.md`.
+# Run commands in workspace with FlowMDM env - use for workspace files needing FlowMDM libraries
+flowmdm-exec-local = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Execute arbitrary command in current directory with FlowMDM environment. Usage: pixi run flowmdm-exec-local -- <command>" }
 
-### the current design of `NamedPose` is as follows:
-- it has a python property pelvis, which always returns a zero tensor of shape (B, 3)
-- in its getters (e.g., get_joint_pose()), it refuses to return the pelvis joint (raise error), to force users to handle it separately
+# Dataset-specific generation helpers (expanded args; run from workspace root)
+flowmdm-gen-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset babel --export-smpl --export-smplx --smplx-model-path ./body_models --output_dir ../../../tmp/flowmdm-out/babel", description = "Generate Babel motion (SMPL/SMPL-X export) to tmp/flowmdm-out/babel" }
+flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion to tmp/flowmdm-out/humanml3d" }
+```
 
-### change it into:
-- rename the `.packed_pose` member variable into `.intrinsic_pose`, to clarify that it only stores intrinsic pose, semantic is the same as before
-- add a new member variable `.root_pose` of shape (B, 3), to represent the global orientation of the pelvis
-- in property `.pelvis`, return the actual pelvis rotation stored in `.root_pose`
-- allow getters (e.g., get_joint_pose()) to return the pelvis joint as well, if requested
-- `.root_pose` can be None, in which case the pelvis is assumed to be zero (same as before)
+## Task 1: Generate motion using FlowMDM
 
-### member function behavior changes:
-- pose getters by name, will now return pelvis if requested
-- pose getters by index, will follow SMPL indexing, see `context/hints/smplx-kb/compare-smpl-skeleton.md` for index mapping, basically 0 for pelvis, and all other joints shifted by +1 index (index k is for .intrinsic_pose[k-1] except for k=0)
-- `to_dict(pelvis_pose:Tensor|None=None)` will include pelvis anyway, no `with_pelvis` argument, if pelvis_pose is given, then use it as the pelvis rotation, otherwise use self.pelvis
+Use the `flowmdm-gen-babel` or `flowmdm-gen-humanml` tasks defined in `pyproject.toml` to generate motion data. The output will include 3D keypoints and, for `babel`, SMPL/SMPL‑X parameters. Redirect outputs to `tmp/flowmdm-out` for further processing.
 
-### add these functions:
-- `to_full_pose(pelvis_pose:Tensor|None = None) -> Tensor`, which returns a packed pose tensor of shape (B, N, 3), where N is the number of joints including pelvis if with_root is True (use torch.cat() to prepend pelvis to intrinsic_pose). If pelvis_pose (shape=(B,3)) is given, then use it as the pelvis rotation, otherwise use self.pelvis. In this way, we allow user to store pelvis rotation separately, but still can get a full pose tensor when needed.
+### Status:
+- FlowMDM environment installed and set up (SpaCy model + chumpy).
+- Created symlink `context/refcode/FlowMDM/body_models -> ../../../data/body_models` for model discovery.
+- Ran generation using task: `pixi run flowmdm-gen-babel` (BABEL, simple-walk instructions; SMPL/SMPL‑X export).
+- Output written to `tmp/flowmdm-out/babel` including: `results.npy`, `results.txt`, `sample_all.mp4`, `smpl_params.npy`, `smplx_pose.npy`, `smplx_transl.npy`, `smplx_global_orient.npy`, `smplx_global_orient_mat.npy`, `smplx_root_transform.npy`, `smplx_layout.json`.
+- Result: motion generated successfully; SMPL‑X path validated; preview videos created.
+
+## Task 2: Understand how FlowMDM uses SMPL/SMPL-H/SMPL-X models
+
+We need to figure out how to convert those outputs to our unified smpl model, the pose part, so that it can animate our unified smpl model, including smpl/smplh/smplx models. We need to transfer the animation in two ways:
+- transfer the pose angles (AA format) directly (via `smplx_toolbox.core.NamedPose`), as well as the global orientation and translation, finally create `UnifiedSmplInputs` for each frame.
+- transfer via 3D keypoints matching, which is more complex but can handle the extra joints missing in FlowMDM output. This is more robust but slower.
+  
+### Task 2.1: Figure out pose mapping between FlowMDM output and our unified smpl model
+
+Find out how to map the babel dataset output to our unified smpl model. You need to first generate motion:
+- using the babel dataset, save them into `tmp/flowmdm-out/babel`, then analyze the output files.
+- using the humanml3d dataset, save them into `tmp/flowmdm-out/humanml3d`, then analyze the output files.
+
+How to run (from workspace root):
+
+1) Ensure body models symlink exists for FlowMDM
+
+```bash
+cd context/refcode/FlowMDM
+ln -s ../../../data/body_models body_models  # if not already present
+ls -la body_models  # should list smplx/, smplh/, smpl/
+cd -
+```
+
+2) Generate Babel sample with SMPL/SMPL‑X export into tmp/flowmdm-out/babel
+
+```bash
+pixi run flowmdm-gen-babel
+```
+
+3) Generate HumanML3D sample into tmp/flowmdm-out/humanml3d
+
+Note: SMPL parameter export is only available for `babel`; for `humanml` you’ll get skeleton/keypoint motion and videos.
+
+```bash
+pixi run flowmdm-gen-humanml
+```
+
+4) Verify outputs
+
+```bash
+ls -la tmp/flowmdm-out/babel
+ls -la tmp/flowmdm-out/humanml3d
+```
+
+Tip: You can use the predefined tasks `flowmdm-gen-babel` and `flowmdm-gen-humanml` which include expanded args and output directories, or use `flowmdm-exec` manually as shown to customize further.

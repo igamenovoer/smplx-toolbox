@@ -261,11 +261,12 @@ flowmdm-exec = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest", descr
 # Run commands in workspace with FlowMDM env - use for workspace files needing FlowMDM libraries
 flowmdm-exec-local = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Execute arbitrary command in current directory with FlowMDM environment. Usage: pixi run flowmdm-exec-local -- <command>" }
 
-# Generate human motion from text prompts using FlowMDM model
-flowmdm-generate-motion = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest generate-motion", description = "Generate motion from text using FlowMDM (runs in FlowMDM directory)" }
+# Dataset-specific FlowMDM generation helpers (expanded args; see context/tasks/task-anything.md)
+# Generate Babel motion with SMPL/SMPL-X exports into tmp/flowmdm-out/babel
+flowmdm-gen-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset babel --export-smpl --export-smplx --smplx-model-path ./body_models --output_dir ../../../tmp/flowmdm-out/babel", description = "Generate Babel motion (SMPL/SMPL-X export) to tmp/flowmdm-out/babel" }
 
-# Generate motion with additional SMPL/SMPL-X mesh exports
-flowmdm-generate-motion-ex = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest generate-motion-ex", description = "Generate motion with SMPL/SMPLX export using FlowMDM (runs in FlowMDM directory)" }
+# Generate HumanML3D motion (skeleton/videos) into tmp/flowmdm-out/humanml3d
+flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion to tmp/flowmdm-out/humanml3d" }
 
 # Show all available FlowMDM tasks and their descriptions
 flowmdm-list-tasks = { cmd = "cd context/refcode/FlowMDM && pixi task list -e latest", description = "List all available tasks in FlowMDM latest environment" }

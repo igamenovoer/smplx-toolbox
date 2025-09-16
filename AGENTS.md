@@ -1,39 +1,28 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Source code: `src/smplx_toolbox/`
-  - Core models: `core/`; utilities: `utils/`; plus `visualization/` and `optimization/`.
-- Tests: main suite `tests/`; extra rigorous cases `unittests/`.
-- Data/assets: `data/` (e.g., `data/body_models` for SMPL/SMPL-X); temp outputs `tmp/`.
-- Scripts: `scripts/` (CLI entry `scripts/smplx-toolbox`, env helper `scripts/auto-install.py`).
-- Docs: `docs/` with MkDocs config `mkdocs.yml`.
+Core source lives in `src/smplx_toolbox/`: `core/` for models, `utils/` for shared helpers, `visualization/` for rendering, and `optimization/` for fitting routines. Tests sit in `tests/` with extended checks in `unittests/`. Dataset assets belong in `data/` (e.g., `data/body_models`). Temporary artifacts go to `tmp/`. CLI and setup helpers are in `scripts/`, while user docs and MkDocs config stay under `docs/`.
 
 ## Build, Test, and Development Commands
-- Install dev env: `pixi install -e dev` (tools + pinned PyTorch per platform).
-- Quick CUDA/CPU setup: `python scripts/auto-install.py` (detects NVIDIA GPU, configures env).
-- Run tests: `pixi run -e dev pytest` (examples: `pytest -q -m "not slow"`, `pytest tests/test_unified_model.py::test_unified_model_forward`).
-- Lint/format: `pixi run -e dev ruff check .` and `pixi run -e dev ruff format .`.
-- Type check: `pixi run -e dev mypy src`.
-- CLI help: `pixi run -e dev python scripts/smplx-toolbox --help`.
+Run `pixi install -e dev` once per machine to provision the pinned toolchain. Use `python scripts/auto-install.py` to auto-detect CUDA/CPU and configure PyTorch wheels quickly. Execute `pixi run -e dev pytest` for the full suite or scope to a test like `pytest -q -m "not slow"`. Lint and format with `pixi run -e dev ruff check .` and `pixi run -e dev ruff format .`. Type-check with `pixi run -e dev mypy src` before merging.
+
+## FlowMDM Integration
+FlowMDM lives in `context/refcode/FlowMDM` and is driven through Pixi wrapper tasks. Install its latest environment via `pixi run flowmdm-install`, then run `pixi run flowmdm-setup` for SpaCy models and legacy `chumpy`.
+
+- Create a symlink once so FlowMDM finds body models: `ln -s ../../../data/body_models context/refcode/FlowMDM/body_models`.
+- Generate motion:
+  - Babel (with SMPL/SMPL-X export): `pixi run flowmdm-gen-babel` → writes to `tmp/flowmdm-out/babel`.
+  - HumanML3D (skeleton + videos): `pixi run flowmdm-gen-humanml` → writes to `tmp/flowmdm-out/humanml3d`.
+- Use `pixi run flowmdm-shell` for an interactive prompt, `pixi run flowmdm-exec <cmd>` to run commands from the FlowMDM root, or `pixi run flowmdm-exec-local <cmd>` when you need the FlowMDM Python env while staying in the workspace root.
 
 ## Coding Style & Naming Conventions
-- Python 3.11+, 4-space indents, max line length 88, prefer double quotes.
-- Keep functions small and fully typed (mypy strict). Imports sorted via ruff-isort.
-- Naming: modules/packages `snake_case`; classes `CamelCase`; constants `UPPER_SNAKE_CASE`.
+Target Python 3.11+, four-space indents, max line width 88, and prefer double quotes. Keep functions small, fully typed, and documented per `.magic-context/general/python-coding-guide.md`. Maintain sorted imports via Ruff (isort). Modules and packages use `snake_case`; classes are `CamelCase`; constants remain `UPPER_SNAKE_CASE`.
 
 ## Testing Guidelines
-- Framework: pytest. Test locations: `tests/` (default) and `unittests/`.
-- Naming: files `test_*.py` or `*_test.py`; classes `Test*`; functions `test_*`.
-- Markers: `unit`, `integration`, `slow` (e.g., `-m "not slow"`). Ensure determinism; avoid external I/O unless explicitly guarded.
+Pytest is the standard; mark scenarios with `unit`, `integration`, or `slow` as needed. Name files `test_*.py` or `*_test.py`, classes `Test*`, and functions `test_*`. Ensure tests are deterministic and avoid external I/O unless explicitly guarded. Run focused checks, e.g., `pytest tests/test_unified_model.py::test_unified_model_forward`, before submitting.
 
 ## Commit & Pull Request Guidelines
-- Commits: Conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`) with clear scope.
-- PRs: include description, linked issues, tests for changes, and screenshots for visual output. Note any `data/` paths used and how to reproduce locally.
+Use Conventional Commit headers (e.g., `feat:`, `fix:`, `docs:`) with descriptive scopes. Every PR should explain intent, link issues, note required assets under `data/`, document reproduction steps, and include screenshots for visual changes. Confirm lint, typing, and tests pass locally; reference the exact commands in the PR description.
 
 ## Security & Configuration Tips
-- Do not commit model assets or large binaries. Keep secrets in `.env` (never commit).
-- PyTorch is not a runtime dependency in `pyproject.toml`; install via Pixi or follow `docs/pytorch-installation.md`.
-- Validate `data/body_models` exists before running examples or tests that need it.
-
-## Additional Guides
-- Python coding patterns and expectations: `.magic-context/general/python-coding-guide.md` (covers docstrings, imports, properties, and factory patterns).
+Do not commit model binaries or secrets; place secrets in `.env` and keep it private. PyTorch stays outside `pyproject.toml`, so rely on Pixi or follow `docs/pytorch-installation.md`. Before running examples, verify `data/body_models` exists and matches the expected license.
