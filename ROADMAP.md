@@ -27,6 +27,23 @@ To become the go-to toolkit for researchers, developers, and artists working wit
   datasets and outputs with SMPL-based pipelines. (Reference: search for
   “Text2Motion skeleton” for canonical joint layouts and conventions.)
 
+Progress toward this interop:
+- [x] FlowMDM environment installed and set up (SpaCy + chumpy) via Pixi tasks.
+- [x] Body models symlink created for FlowMDM
+      (`context/refcode/FlowMDM/body_models -> ../../../data/body_models`).
+- [x] Motion generation verified:
+  - [x] Babel with SMPL/SMPL‑X exports → `tmp/flowmdm-out/babel`.
+  - [x] HumanML3D skeleton/videos → `tmp/flowmdm-out/humanml3d`.
+- [x] Added convenience tasks: `flowmdm-gen-babel`, `flowmdm-gen-humanml`.
+- [x] Wrote hint with exact commands and paths:
+      `context/hints/howto-run-flowmdm-and-redirect-output.md`.
+
+Next up under this priority:
+- [ ] Define joint name mapping between FlowMDM/BABEL/HumanML3D outputs and
+      our `NamedPose`/Unified SMPL inputs (AA, global_orient, transl).
+- [ ] Implement conversion utilities and tests for direct AA transfer.
+- [ ] Prototype 3D keypoint matching path for joints not present in FlowMDM.
+
 ## Currently Working / Recent Changes
 
 Keypoint-Based Fitting (completed; validate on real data next)
