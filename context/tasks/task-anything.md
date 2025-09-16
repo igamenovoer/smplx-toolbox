@@ -30,7 +30,7 @@ flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.genera
 
 Use the `flowmdm-gen-babel` or `flowmdm-gen-humanml` tasks defined in `pyproject.toml` to generate motion data. The output will include 3D keypoints and, for `babel`, SMPL/SMPL‑X parameters. Redirect outputs to `tmp/flowmdm-out` for further processing.
 
-### Status:
+### Status
 - FlowMDM environment installed and set up (SpaCy model + chumpy).
 - Created symlink `context/refcode/FlowMDM/body_models -> ../../../data/body_models` for model discovery.
 - Ran generation using task: `pixi run flowmdm-gen-babel` (BABEL, simple-walk instructions; SMPL/SMPL‑X export).
@@ -43,9 +43,9 @@ We need to figure out how to convert those outputs to our unified smpl model, th
 - transfer the pose angles (AA format) directly (via `smplx_toolbox.core.NamedPose`), as well as the global orientation and translation, finally create `UnifiedSmplInputs` for each frame.
 - transfer via 3D keypoints matching, which is more complex but can handle the extra joints missing in FlowMDM output. This is more robust but slower.
   
-### Task 2.1: Figure out pose mapping between FlowMDM output and our unified smpl model
+### Task 2.1: Generate motion for `babel` and `humanml3d` datasets
 
-Find out how to map the babel dataset output to our unified smpl model. You need to first generate motion:
+You need to first generate motion:
 - using the babel dataset, save them into `tmp/flowmdm-out/babel`, then analyze the output files.
 - using the humanml3d dataset, save them into `tmp/flowmdm-out/humanml3d`, then analyze the output files.
 
@@ -82,3 +82,37 @@ ls -la tmp/flowmdm-out/humanml3d
 ```
 
 Tip: You can use the predefined tasks `flowmdm-gen-babel` and `flowmdm-gen-humanml` which include expanded args and output directories, or use `flowmdm-exec` manually as shown to customize further.
+
+### Task 2.2: Transfer `babel` SMPL animation to unified smpl model
+
+you have the results in:
+- `tmp/flowmdm-out/babel`: generated motion based on `babel` dataset, includes SMPL/SMPL‑X parameters
+- `tmp/flowmdm-out/humanml3d`: generated motion based on `humanml3d` dataset, includes skeleton/keypoint motion
+
+for babel output, we shall construct a list of `UnifiedSmplInputs` objects, one for each frame, each such object only contains:
+- `named_pose`: intrinsic pose only (no pelvis), with appropriate `model_type` (smpl/smplh/smplx) and `batch_size=1`
+- `global_orient`: pelvis AA
+- `transl`: global translation
+- for other fields, remain `None`
+
+the converted `UnifiedSmplInputs` should be stored as `unify_smpl_animation.pkl` in the same dir (`tmp/flowmdm-out/babel`), so that it can be loaded later for animation.
+
+implementation should be a CLI tool in `scripts/cvt_flowmdm_babel_to_smpl_animation.py`, which takes:
+- `--input_dir`: input dir containing FlowMDM babel output (default: `tmp/flowmdm-out/babel`)
+- `--output_path`: output path to save the pickled list of `UnifiedSmplInputs` (default: same dir as input, filename `unified_smpl_animation.pkl`)
+
+How to run (from workspace root):
+
+```bash
+pixi run -e dev python scripts/cvt_flowmdm_babel_to_smpl_animation.py \
+  --input_dir tmp/flowmdm-out/babel \
+  --output_path tmp/flowmdm-out/babel/unified_smpl_animation.pkl
+```
+
+Notes:
+- Uses SMPL-H as the default `model_type` and fills body joints; missing hands/face remain zeros.
+- Falls back to `smplx_pose.npy` + `smplx_global_orient.npy` + `smplx_transl.npy` if `smpl_params.npy` is absent.
+
+Status:
+- [x] Implemented converter: `scripts/cvt_flowmdm_babel_to_smpl_animation.py`.
+- [x] Generated output: `tmp/flowmdm-out/babel/unified_smpl_animation.pkl`.
