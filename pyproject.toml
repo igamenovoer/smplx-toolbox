@@ -40,7 +40,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [ 
     "rich>=14.1.0,<15", 
-    "attrs>=25.3.0,<26", "ipykernel>=6.30.1,<7", "scipy>=1.16.1,<2", "trimesh>=4.8.1,<5", "kornia>=0.8.1,<0.9",
+    "attrs>=25.3.0,<26", "ipykernel>=6.30.1,<7", "scipy>=1.16.1,<2", "trimesh>=4.8.1,<5", "kornia>=0.8.1,<0.9", "pyvista>=0.46.3,<0.47", "pyqt6>=6.9.1,<7", "trame>=3.12.0,<4", "trame-vtk>=2.9.1,<3",
     # Note: PyTorch is NOT included as a dependency
     # Users must install PyTorch themselves based on their hardware
     # Example: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
@@ -268,11 +268,14 @@ flowmdm-gen-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate
 # Generate HumanML3D motion (skeleton/videos) into tmp/flowmdm-out/humanml3d
 flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion to tmp/flowmdm-out/humanml3d" }
 
+# Show the unified-model animation produced from Babel conversion
+flowmdm-show-babel-anim = { cmd = "pixi run -e dev python scripts/show-animation-unified-model.py --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl --body-models-path data/body_models", description = "Show Babel unified SMPL animation (default --model-type smplx). Override via: pixi run flowmdm-show-babel-anim -- --model-type smplh" }
+
 # Show all available FlowMDM tasks and their descriptions
 flowmdm-list-tasks = { cmd = "cd context/refcode/FlowMDM && pixi task list -e latest", description = "List all available tasks in FlowMDM latest environment" }
 
 [dependency-groups]
-dev = ["tabulate>=0.9.0,<0.10", "pandas>=2.3.2,<3", "mkdocs-material>=9.6.19,<10", "mkdocstrings>=0.30.0,<0.31", "mkdocstrings-python>=1.18.2,<2", "pyvista>=0.46.3,<0.47", "pyvistaqt>=0.11.3,<0.12", "pyqt5>=5.15.11,<6", "trame>=3.12.0,<4", "trame-vtk>=2.9.1,<3", "trame-vuetify>=3.0.3,<4", "ipywidgets>=8.1.7,<9"]
+dev = ["tabulate>=0.9.0,<0.10", "pandas>=2.3.2,<3", "mkdocs-material>=9.6.19,<10", "mkdocstrings>=0.30.0,<0.31", "mkdocstrings-python>=1.18.2,<2", "pyqt5>=5.15.11,<6", "trame>=3.12.0,<4", "trame-vtk>=2.9.1,<3", "trame-vuetify>=3.0.3,<4", "ipywidgets>=8.1.7,<9", "pyvista>=0.46.3,<0.47", "pyvistaqt>=0.11.3,<0.12", "pyqt6>=6.9.1,<7", "ipykernel>=6.30.1,<7", "trame-jupyter-extension>=2.1.4,<3"]
 
 # [dependency-groups]
 # dev = [ "ipykernel>=6.30.1,<7", "rich>=14.1.0,<15", "attrs>=25.3.0,<26", "pyvista>=0.46.3,<0.47", "pyvistaqt>=0.11.3,<0.12", "pyqt5>=5.15.11,<6"]

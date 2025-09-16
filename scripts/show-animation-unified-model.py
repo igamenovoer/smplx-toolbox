@@ -188,8 +188,8 @@ def main() -> None:
     parser.add_argument(
         "--model-type",
         choices=ModelType.values(),
-        required=True,
-        help="Base model type to load (smpl|smplh|smplx)",
+        default="smplx",
+        help="Base model type to load (smpl|smplh|smplx). Default: smplx",
     )
     parser.add_argument(
         "--body-models-path",
@@ -234,4 +234,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
