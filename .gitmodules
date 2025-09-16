@@ -17,3 +17,6 @@
 	path = context/refcode/igpy
 	url = git@github.com:igamenovoer/igpy.git
 	branch = main
+[submodule "context/refcode/FlowMDM"]
+	path = context/refcode/FlowMDM
+	url = git@github.com:imsight-forks/FlowMDM.git

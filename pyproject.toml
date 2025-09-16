@@ -236,6 +236,40 @@ upgrade-deps = "pip list --outdated"
 utest-keypoint-match-run = "pytest -q unittests/fitting/test_keypoint_match.py"
 utest-keypoint-match-show = "python scripts/show-keypoint-match.py --input tmp/unittests/fitting/smoke_test_keypoint_match.pkl && python scripts/show-keypoint-match.py --input tmp/unittests/fitting/smoke_test_keypoint_match_vposer.pkl"
 
+# FlowMDM convenience tasks - delegate to FlowMDM environment
+# These tasks provide easy access to FlowMDM functionality from the workspace root
+# FlowMDM is a motion generation model using diffusion techniques for human motion synthesis
+
+# Install FlowMDM's latest environment with PyTorch 2.7.1+cu126
+flowmdm-install = { cmd = "pixi install --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Install FlowMDM latest environment" }
+
+# Download SpaCy models and install legacy chumpy package
+flowmdm-setup = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest setup", description = "Setup FlowMDM environment (SpaCy models and chumpy)" }
+
+# Verify CUDA PyTorch installation and GPU availability
+flowmdm-test-cuda = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest test-cuda", description = "Test PyTorch CUDA in FlowMDM environment" }
+
+# Quick PyTorch version check
+flowmdm-pytorch-version = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest pytorch-version", description = "Check PyTorch version in FlowMDM environment" }
+
+# Start interactive shell with FlowMDM environment
+flowmdm-shell = { cmd = "pixi shell --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Activate FlowMDM shell environment" }
+
+# Run commands in FlowMDM dir - use for FlowMDM scripts that need relative paths
+flowmdm-exec = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest", description = "Execute arbitrary command in FlowMDM directory with latest environment. Usage: pixi run flowmdm-exec -- <command>" }
+
+# Run commands in workspace with FlowMDM env - use for workspace files needing FlowMDM libraries
+flowmdm-exec-local = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Execute arbitrary command in current directory with FlowMDM environment. Usage: pixi run flowmdm-exec-local -- <command>" }
+
+# Generate human motion from text prompts using FlowMDM model
+flowmdm-generate-motion = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest generate-motion", description = "Generate motion from text using FlowMDM (runs in FlowMDM directory)" }
+
+# Generate motion with additional SMPL/SMPL-X mesh exports
+flowmdm-generate-motion-ex = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest generate-motion-ex", description = "Generate motion with SMPL/SMPLX export using FlowMDM (runs in FlowMDM directory)" }
+
+# Show all available FlowMDM tasks and their descriptions
+flowmdm-list-tasks = { cmd = "cd context/refcode/FlowMDM && pixi task list -e latest", description = "List all available tasks in FlowMDM latest environment" }
+
 [dependency-groups]
 dev = ["tabulate>=0.9.0,<0.10", "pandas>=2.3.2,<3", "mkdocs-material>=9.6.19,<10", "mkdocstrings>=0.30.0,<0.31", "mkdocstrings-python>=1.18.2,<2", "pyvista>=0.46.3,<0.47", "pyvistaqt>=0.11.3,<0.12", "pyqt5>=5.15.11,<6", "trame>=3.12.0,<4", "trame-vtk>=2.9.1,<3", "trame-vuetify>=3.0.3,<4", "ipywidgets>=8.1.7,<9"]
 
