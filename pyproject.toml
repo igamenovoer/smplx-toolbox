@@ -274,6 +274,9 @@ flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.genera
 # Back-compat: use the Babel checkpoint but write to the same output folder (yields Babel-decoded joints)
 flowmdm-gen-humanml-via-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D-like output using Babel checkpoint (no HML stats needed)." }
 
+# Convert HumanML3D extended outputs to UnifiedSmplInputs animation
+flowmdm-cvt-humanml = { cmd = "pixi run -e dev python scripts/cvt_flowmdm_humanml_to_smpl_animation.py --input_dir tmp/flowmdm-out/humanml3d --output_path tmp/flowmdm-out/humanml3d/unified_smpl_animation.pkl", description = "Convert FlowMDM HumanML3D extended results (results_ext.npy) into UnifiedSmplInputs pickle." }
+
 # Show the unified-model animation produced from Babel conversion (multiple backends)
 flowmdm-show-babel-anim = { cmd = "pixi run -e dev python scripts/show-animation-unified-model.py --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl --body-models-path data/body_models --backend browser", description = "Show Babel unified SMPL animation (browser backend; pass --port to override). Use -basic/-qt for other backends." }
 flowmdm-show-babel-anim-browser = { cmd = "pixi run -e dev python scripts/show-animation-unified-model.py --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl --body-models-path data/body_models --backend browser", description = "Show Babel unified SMPL animation in browser via Trame/VTK (left/right to scrub; optional --port)." }

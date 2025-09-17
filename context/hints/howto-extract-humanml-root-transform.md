@@ -59,6 +59,96 @@ Key takeaways from `recover_root_rot_pos()`:
 - For debugging, print a few frames of `r_rot_quat`; values other than the first two entries should stay near zero, confirming yaw-only global rotation.
 - When adapting this for batches >1, remember that FlowMDM stacks prompts in the batch dimension, so index into `r_rot_quat[batch_index]`.
 
+## HumanML3D Normalization Stats (HML_Mean_Gen.npy / HML_Std_Gen.npy)
+
+- Files: `context/refcode/FlowMDM/dataset/HML_Mean_Gen.npy`, `context/refcode/FlowMDM/dataset/HML_Std_Gen.npy`
+- Origin: symlinks to HumanML3D’s `Mean.npy` and `Std.npy` in `context/refcode/HumanML3D/HumanML3D/`
+- Shape/dtype: `(263,)` `float32` each
+- Meaning: per‑channel dataset mean and standard deviation for the 263‑dim HumanML3D feature vector. Used to z‑normalize during training and to de‑normalize model outputs during sampling.
+- Where used: `context/refcode/FlowMDM/runners/generate.py:93` loads these files to denormalize before converting features to XYZ joints.
+
+Denormalization rule (applied per channel, per frame):
+
+```python
+denorm = norm * std + mean  # broadcasted over time dimension
+```
+
+Keep the stats paired with the checkpoint. Wrong stats → wrong global scale/trajectory.
+
+## 263‑D Feature Layout (channel map)
+
+After de‑normalization, the HumanML3D feature vector at each frame has the following layout (indices in brackets):
+
+- Root state (4):
+  - [0] yaw angular velocity (Δθ around Y, radians per frame)
+  - [1:3] planar linear velocity (Vx, Vz) in the root frame
+  - [3] root height Y (pelvis height)
+- RIC local joint positions (63):
+  - [4 : 4 + 21×3) → joints 1..21, 3D each
+- Joint rotations, continuous 6D (126):
+  - [4 + 21×3 : 4 + 21×3 + 21×6) → joints 1..21, 6D each
+- Local joint velocities (66):
+  - next 22×3 channels → joints 0..21, 3D each
+- Foot contacts (4):
+  - last 4 channels → binary contacts for pair of L/R foot joints
+
+This ordering matches how `motion_process.py` concatenates features during dataset creation and how `recover_from_ric()` expects them at decode time.
+
+## Recover Root Transform Using The Stats
+
+Recommended: use the built‑in function after de‑normalization.
+
+```python
+from context.refcode.FlowMDM.data_loaders.humanml.scripts.motion_process import recover_root_rot_pos
+
+# sample_denorm: [B, T, 263] from the steps above
+r_quat, r_pos = recover_root_rot_pos(sample_denorm)
+# r_quat: [B, T, 4] in (w, x, y, z) with yaw-only rotation
+# r_pos : [B, T, 3] accumulated translation in world frame (x, y, z)
+```
+
+What `recover_root_rot_pos()` does internally:
+- Integrates yaw angle by cumulative sum of channel [0] (Δθ) to get θ(t)
+- Builds quaternion `(w=cos θ, x=0, y=sin θ, z=0)` (yaw‑only)
+- Integrates planar velocities from channels [1:3] over time, rotated into world frame by the inverse yaw
+- Sets translation Y from channel [3]
+
+## Manual Root Decode (optional)
+
+If you want to replicate the math without calling the helper:
+
+```python
+import torch
+from context.refcode.FlowMDM.data_loaders.humanml.scripts.quaternion import qinv, qrot
+
+# X: [B, T, 263] denormalized features
+rot_vel = X[..., 0]                                 # [B, T]
+planar_v = X[..., 1:3]                              # [B, T, 2] (Vx, Vz)
+height_y = X[..., 3]                                # [B, T]
+
+# integrate yaw angle θ(t) from per-frame Δθ
+theta = torch.zeros_like(rot_vel)
+theta[..., 1:] = rot_vel[..., :-1]
+theta = torch.cumsum(theta, dim=-1)                 # [B, T]
+
+# yaw quaternion (w, x, y, z) with yaw-only rotation
+r_quat = torch.zeros(X.shape[:-1] + (4,), device=X.device)
+r_quat[..., 0] = torch.cos(theta)
+r_quat[..., 2] = torch.sin(theta)
+
+# accumulate translation in world frame
+r_pos = torch.zeros(X.shape[:-1] + (3,), device=X.device)
+r_pos[..., 1:, 0] = planar_v[..., :-1, 0]
+r_pos[..., 1:, 2] = planar_v[..., :-1, 1]
+r_pos = qrot(qinv(r_quat), r_pos)                   # rotate velocities into world
+r_pos = torch.cumsum(r_pos, dim=-2)                 # integrate over time
+r_pos[..., 1] = height_y                            # set pelvis height
+```
+
+Notes:
+- Channel indices refer to the de‑normalized feature vector. Always apply `denorm = norm * std + mean` first using the 263‑D stats.
+- The quaternion convention is `(w, x, y, z)` and the global rotation is yaw‑only by construction of HumanML3D features.
+
 ## References
 - `context/refcode/FlowMDM/runners/generate.py`
 - `context/refcode/FlowMDM/data_loaders/humanml/scripts/motion_process.py`
