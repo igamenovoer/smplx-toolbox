@@ -116,3 +116,46 @@ Notes:
 Status:
 - [x] Implemented converter: `scripts/cvt_flowmdm_babel_to_smpl_animation.py`.
 - [x] Generated output: `tmp/flowmdm-out/babel/unified_smpl_animation.pkl`.
+
+### Task 2.3: Visualize the converted `babel` animation
+
+we need to visualize the converted `babel` animation (`tmp/flowmdm-out/babel/unified_smpl_animation.pkl`), using `pyvista` for rendering.
+
+**Deliverable**: a CLI tool `scripts/show-animation-unified-model.py` that:
+- `--anim-file <filepath>`: path to the pickled list of `UnifiedSmplInputs` (required)
+- `--model-type <smpl/smplh/smplx>`: model type to visualize (default: `smplx`)
+- `--body-model-dir <dir>`: path to body models (default: `data/body_models`)
+- `--backend <basic/qt/browser>`: rendering backend (default: `basic`)
+  - for `basic`, use on-screen PyVista rendering with a turntable-style camera
+  - for `qt`, use `pyvistaqt` (requires `pyqt5` and XCB on Linux)
+  - for `browser`, use Trame/VTK to render in the browser; optionally provide `--port`, otherwise a free port is auto-picked
+- Interactive control:
+  - `Left/Right`: step backward/forward one frame
+  - `r`: reset view
+
+Status:
+- [x] Implemented CLI with `basic`, `qt`, and `browser` backends
+- [x] Added back-compat alias `--body-models-path` for existing tasks
+- [x] Added optional `--port` flag for the browser backend (auto-pick when omitted)
+- [x] Added global axis / 10×10 m ground grid and verified browser reachability
+- [x] Updated Pixi task `flowmdm-show-babel-anim` to use `--backend browser`
+- [x] **Task complete**: viewer matches requirements and confirmed on WSL
+
+How to run (from workspace root):
+
+```bash
+# Launch browser viewer on the converted Babel animation
+pixi run flowmdm-show-babel-anim
+
+# Or manually with explicit flags
+pixi run -e dev python scripts/show-animation-unified-model.py \
+  --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl \
+  --body-model-dir data/body_models \
+  --model-type smplx \
+  --backend browser
+
+# Override port (e.g., when tunnelling through SSH)
+pixi run -e dev python scripts/show-animation-unified-model.py \
+  --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl \
+  --backend browser --port 9000
+```

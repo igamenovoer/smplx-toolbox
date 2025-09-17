@@ -1,26 +1,31 @@
-"""Show Unified SMPL/SMPL-H/SMPL-X model and optional animation via PyVista.
+"""Show Unified SMPL/SMPL-H/SMPL-X animation with selectable backend.
 
 This viewer loads a SMPL-family model via `smplx`, wraps it with
-`UnifiedSmplModel`, and visualizes either a static pose or an animation where
-each frame is a `UnifiedSmplInputs` entry (pickled list).
+`UnifiedSmplModel`, and visualizes an animation where each frame is a
+`UnifiedSmplInputs` entry (a pickled list created by the FlowMDM converter).
 
 Controls
 --------
-- Space: Play/Pause
-- Left/Right: Previous/Next frame
-- R: Reset to frame 0
-- Slider: Scrub timeline
+- Left/Right: Step backward/forward one frame (basic/qt)
+- r: Reset camera view (basic/qt)
+- Slider: Scrub timeline (all backends)
+- Global axis widget is always visible
+
+Backends
+--------
+- basic: PyVista on-screen rendering (turntable-style camera controls)
+- qt: PyVistaQt via `pyvistaqt` (requires PyQt5 and XCB on Linux)
+- browser: Trame-based browser UI (no Qt requirements; optional `--port`)
 
 Examples
 --------
-Static model (default zero pose):
-    pixi run -e dev python scripts/show-animation-unified-model.py \
-        --model-type smplx --body-models-path data/body_models
-
-With animation (list[UnifiedSmplInputs] pickle):
     pixi run -e dev python scripts/show-animation-unified-model.py \
         --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl \
-        --model-type smplh --body-models-path data/body_models --autoplay --fps 24
+        --model-type smplx --body-model-dir data/body_models --backend browser
+
+    pixi run -e dev python scripts/show-animation-unified-model.py \
+        --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl \
+        --backend browser --port 9000
 """
 
 from __future__ import annotations
@@ -29,8 +34,7 @@ import argparse
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
-import os
+from typing import List, Optional
 
 import numpy as np
 import pyvista as pv
@@ -103,7 +107,7 @@ def faces_to_pv(faces_idx: torch.Tensor) -> np.ndarray:
 def _make_plotter_offscreen() -> pv.Plotter:
     """Create a PyVista plotter suitable for browser/server rendering.
 
-    Uses off_screen=True to avoid any Qt/xcb requirements.
+    Uses ``off_screen=True`` to avoid any Qt/xcb requirements.
     """
     return pv.Plotter(off_screen=True)
 
@@ -121,20 +125,33 @@ def _is_notebook() -> bool:
 
 def build_plotter(verts: List[np.ndarray], faces_idx: torch.Tensor) -> tuple[pv.Plotter, pv.PolyData]:
     mesh = pv.PolyData(verts[0], faces_to_pv(faces_idx))
-    pl = _make_plotter_offscreen()
+    pl = pv.Plotter()
+    pl.add_mesh(mesh, color="lightgray", smooth_shading=True)
+    return pl, mesh
+
+
+def build_plotter_qt(verts: List[np.ndarray], faces_idx: torch.Tensor):
+    try:
+        import pyvistaqt as pvqt  # type: ignore
+    except Exception as e:  # pragma: no cover - optional dependency
+        raise RuntimeError(
+            "Backend 'qt' requires pyvistaqt and a working Qt installation"
+        ) from e
+    mesh = pv.PolyData(verts[0], faces_to_pv(faces_idx))
+    pl = pvqt.BackgroundPlotter()
     pl.add_mesh(mesh, color="lightgray", smooth_shading=True)
     return pl, mesh
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Show Unified SMPL/SMPL-H/SMPL-X model and optional animation."
+        description="Show Unified SMPL/SMPL-H/SMPL-X animation with selectable backend."
     )
     parser.add_argument(
         "--anim-file",
         type=str,
-        default=None,
-        help="Optional pickle containing list[UnifiedSmplInputs]",
+        required=True,
+        help="Pickle containing list[UnifiedSmplInputs]",
     )
     parser.add_argument(
         "--model-type",
@@ -143,10 +160,18 @@ def main() -> None:
         help="Base model type to load (smpl|smplh|smplx). Default: smplx",
     )
     parser.add_argument(
-        "--body-models-path",
+        "--body-model-dir",
+        dest="body_models_dir",
         type=str,
         default="data/body_models",
         help="Parent directory containing 'smpl', 'smplh', 'smplx' folders",
+    )
+    # Back-compat alias
+    parser.add_argument(
+        "--body-models-path",
+        dest="body_models_dir",
+        type=str,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--gender",
@@ -156,58 +181,105 @@ def main() -> None:
         help="Model gender",
     )
     parser.add_argument(
-        "--fps", type=int, default=24, help="Playback FPS for animation"
+        "--backend",
+        type=str,
+        choices=["basic", "qt", "browser"],
+        default="basic",
+        help="Rendering backend: basic|qt|browser",
     )
     parser.add_argument(
-        "--autoplay",
-        action="store_true",
-        help="Start playing automatically when animation is present",
+        "--port",
+        type=int,
+        default=None,
+        help="Browser backend port (auto-pick when omitted)",
     )
 
     args = parser.parse_args()
 
-    anim: Optional[AnimationData] = None
-    if args.anim_file is not None:
-        anim = load_animation(Path(args.anim_file))
+    anim: Optional[AnimationData] = load_animation(Path(args.anim_file))
 
     model = create_unified_model(
         model_type=ModelType(args.model_type),
-        body_models_path=Path(args.body_models_path),
+        body_models_path=Path(args.body_models_dir),
         gender=args.gender,
     )
 
     frames = anim.frames if anim is not None else None
     verts = precompute_vertices(model, frames)
 
-    # Build plotter and mesh
-    pl, mesh = build_plotter(verts, model.faces)
+    # Shared update hook (browser backend uses this helper)
+    def make_set_frame(
+        _pl,
+        _mesh,
+        _after_render=None,
+    ):
+        def _set(i: int) -> None:
+            i = int(np.clip(i, 0, len(verts) - 1))
+            _mesh.points = verts[i]
+            _pl.render()
+            if _after_render is not None:
+                try:
+                    _after_render()
+                except Exception:
+                    pass
+        return _set
 
-    # Update hook to set a specific frame
-    def set_frame(i: int) -> None:
-        i = int(np.clip(i, 0, len(verts) - 1))
-        mesh.points = verts[i]
-        pl.render()
+    backend = args.backend
 
-    if _is_notebook():
-        # Jupyter: prefer client-side rendering for minimal deps
-        pv.set_jupyter_backend("client")
-        # Expose a simple slider in the scene for scrubbing
-        if len(verts) > 1:
-            pl.add_slider_widget(
-                lambda v: set_frame(int(v)),
-                rng=[0, len(verts) - 1],
-                value=0,
-                title=f"Frame (0..{len(verts)-1})",
-                pointa=(0.025, 0.1),
-                pointb=(0.31, 0.1),
-                style="modern",
+    if backend == "browser":
+        # Build offscreen plotter for trame to drive
+        pl = _make_plotter_offscreen()
+        mesh = pv.PolyData(verts[0], faces_to_pv(model.faces))
+        pl.add_mesh(mesh, color="lightgray", smooth_shading=True)
+        try:
+            ground = pv.Plane(
+                center=(0.0, 0.0, 0.0),
+                direction=(0.0, 0.0, 1.0),
+                i_size=10.0,
+                j_size=10.0,
+                i_resolution=10,
+                j_resolution=10,
             )
-        pl.show(jupyter_backend="client")
-    else:
-        # Browser-based viewer via trame on port 8899
-        from trame.app import get_server
-        from trame.ui.vuetify import SinglePageLayout
-        from trame.widgets import vtk as vtk_widgets, vuetify
+            pl.add_mesh(
+                ground,
+                color="#dddddd",
+                opacity=0.35,
+                show_edges=True,
+                edge_color="#bcbcbc",
+                line_width=1,
+            )
+        except Exception:
+            pass
+        try:
+            pl.add_axes()
+        except Exception:
+            pass
+        try:
+            pl.enable_custom_trackball_style(
+                left_button="environment_rotate",
+                shift_left_button="pan",
+                ctrl_left_button="spin",
+                middle_button="pan",
+                right_button="dolly",
+            )
+        except Exception:
+            pass
+        # We'll inject a view.update() to push renders to the browser
+        view_ref = {}
+        def after_render():
+            v = view_ref.get("view")
+            if v is not None:
+                try:
+                    v.update()
+                except Exception:
+                    pass
+
+        set_frame = make_set_frame(pl, mesh, after_render)
+
+        # Browser-based viewer via trame; auto-pick port
+        from trame.app import get_server  # type: ignore
+        from trame.ui.vuetify import SinglePageLayout  # type: ignore
+        from trame.widgets import vtk as vtk_widgets, vuetify  # type: ignore
 
         server = get_server(client_type="vue2")
         state, ctrl = server.state, server.controller
@@ -232,16 +304,186 @@ def main() -> None:
                 vuetify.VSpacer()
             with layout.content:
                 view = vtk_widgets.VtkRemoteView(pl.ren_win)
-                # Controls
+                view_ref["view"] = view
                 if n > 1:
-                    vuetify.VSlider(v_model=("frame", 0), min=0, max=n - 1, step=1, dense=True, hide_details=True)
+                    vuetify.VSlider(
+                        v_model=("frame", 0),
+                        min=0,
+                        max=n - 1,
+                        step=1,
+                        dense=True,
+                        hide_details=True,
+                    )
                     with vuetify.VRow(classes="ma-0 pa-0"):
                         vuetify.VBtn("Prev", click=ctrl.prev_frame, classes="ma-1")
                         vuetify.VBtn("Next", click=ctrl.next_frame, classes="ma-1")
 
-        # Initial render and start server
         pl.render()
-        server.start(port=8899, open_browser=True)
+        start_kwargs = {"address": "0.0.0.0", "open_browser": False}
+        if args.port is not None:
+            start_kwargs["port"] = args.port
+        @server.controller.on_server_ready.add
+        def _announce(**_kwargs):
+            host = "127.0.0.1"
+            port = start_kwargs.get("port", getattr(server, "port", None))
+            if port is None:
+                try:
+                    port = server.port  # type: ignore[attr-defined]
+                except Exception:
+                    port = "?"
+            print(f"[viewer] Browser backend available at http://{host}:{port}")
+        server.start(**start_kwargs)
+        return
+
+    # basic/qt backends share the same interaction model
+    if backend == "qt":
+        pl, mesh = build_plotter_qt(verts, model.faces)
+    else:
+        pl, mesh = build_plotter(verts, model.faces)
+
+    try:
+        ground = pv.Plane(
+            center=(0.0, 0.0, 0.0),
+            direction=(0.0, 0.0, 1.0),
+            i_size=10.0,
+            j_size=10.0,
+            i_resolution=10,
+            j_resolution=10,
+        )
+        pl.add_mesh(
+            ground,
+            color="#dddddd",
+            opacity=0.35,
+            show_edges=True,
+            edge_color="#bcbcbc",
+            line_width=1,
+        )
+    except Exception:
+        pass
+
+    try:
+        pl.add_axes()
+    except Exception:
+        pass
+
+    # Animation state for basic/qt interactor
+    state = {
+        "frame": 0,
+        "n": len(verts),
+        "slider": None,
+    }
+
+    def set_frame(i: int, *, update_slider: bool = True) -> None:
+        if state["n"] == 0:
+            return
+        i = int(np.clip(i, 0, state["n"] - 1))
+        state["frame"] = i
+        mesh.points = verts[i]
+        pl.render()
+        if update_slider and state["slider"] is not None:
+            try:
+                rep = state["slider"].GetRepresentation()  # type: ignore[attr-defined]
+                rep.SetValue(float(i))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    n_frames = state["n"]
+
+    # Slider to scrub (keep handle so we can update it when stepping programmatically)
+    slider_widget = None
+    if n_frames > 1:
+        def _on_slider(value: float) -> None:
+            set_frame(int(round(value)), update_slider=False)
+
+        slider_widget = pl.add_slider_widget(
+            _on_slider,
+            rng=[0, n_frames - 1],
+            value=0,
+            title=f"Frame (0..{n_frames-1})",
+            pointa=(0.025, 0.1),
+            pointb=(0.31, 0.1),
+            style="modern",
+        )
+        state["slider"] = slider_widget
+
+    # HUD and key bindings
+    if backend in {"basic", "qt"}:
+        try:
+            pl.enable_custom_trackball_style(
+                left_button="environment_rotate",
+                shift_left_button="pan",
+                ctrl_left_button="spin",
+                middle_button="pan",
+                right_button="dolly",
+            )
+        except Exception:
+            pass
+
+        pl.add_text(
+            "←/→: Prev/Next  r: Reset view",
+            font_size=10,
+        )
+
+        def on_left() -> None:
+            if n_frames <= 1:
+                return
+            set_frame((state["frame"] - 1) % n_frames)
+
+        def on_right() -> None:
+            if n_frames <= 1:
+                return
+            set_frame((state["frame"] + 1) % n_frames)
+
+        def on_reset_view() -> None:
+            try:
+                pl.reset_camera()
+                pl.render()
+            except Exception:
+                pass
+
+        # Register keyboard shortcuts (with VTK fallback)
+        key_bindings_ok = True
+        try:
+            pl.add_key_event("Left", on_left)
+            pl.add_key_event("Right", on_right)
+            pl.add_key_event("r", on_reset_view)
+        except Exception:
+            key_bindings_ok = False
+
+        # Fallback: raw VTK key observer if Plotter.add_key_event isn't available yet
+        if not key_bindings_ok:
+            try:
+                def _vtk_key_handler(obj, evt):
+                    try:
+                        key = obj.GetKeySym()  # type: ignore[attr-defined]
+                    except Exception:
+                        return
+                    if key == "Left":
+                        on_left()
+                    elif key == "Right":
+                        on_right()
+                    elif key in ("r", "R"):
+                        on_reset_view()
+
+                if hasattr(pl, "iren") and pl.iren is not None:  # type: ignore[attr-defined]
+                    pl.iren.AddObserver("KeyPressEvent", _vtk_key_handler)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    # Render
+    if backend == "qt":
+        # Block on Qt event loop
+        try:
+            pl.app.exec_()  # type: ignore[attr-defined]
+        except Exception:
+            pl.show()
+    else:
+        # In notebooks, prefer client backend
+        if _is_notebook():
+            pv.set_jupyter_backend("client")
+            pl.show(jupyter_backend="client")
+        else:
+            pl.show()
 
 
 if __name__ == "__main__":
