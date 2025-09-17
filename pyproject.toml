@@ -266,7 +266,13 @@ flowmdm-exec-local = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/p
 flowmdm-gen-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset babel --export-smpl --export-smplx --smplx-model-path ./body_models --output_dir ../../../tmp/flowmdm-out/babel", description = "Generate Babel motion (SMPL/SMPL-X export) to tmp/flowmdm-out/babel" }
 
 # Generate HumanML3D motion (skeleton/videos) into tmp/flowmdm-out/humanml3d
-flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion to tmp/flowmdm-out/humanml3d" }
+# Generate HumanML3D motion (skeleton/videos) into tmp/flowmdm-out/humanml3d.
+# NOTE: Requires HumanML stats at context/refcode/FlowMDM/dataset/{HML_Mean_Gen.npy,HML_Std_Gen.npy}.
+# If missing, fetch from your HumanML3D prep or copy into that folder.
+flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/humanml/FlowMDM/model000500000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 60 --guidance_param 2.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion (uses HumanML checkpoint). Requires dataset/HML_*_Gen.npy in FlowMDM repo." }
+
+# Back-compat: use the Babel checkpoint but write to the same output folder (yields Babel-decoded joints)
+flowmdm-gen-humanml-via-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D-like output using Babel checkpoint (no HML stats needed)." }
 
 # Show the unified-model animation produced from Babel conversion (multiple backends)
 flowmdm-show-babel-anim = { cmd = "pixi run -e dev python scripts/show-animation-unified-model.py --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl --body-models-path data/body_models --backend browser", description = "Show Babel unified SMPL animation (browser backend; pass --port to override). Use -basic/-qt for other backends." }

@@ -159,3 +159,44 @@ pixi run -e dev python scripts/show-animation-unified-model.py \
   --anim-file tmp/flowmdm-out/babel/unified_smpl_animation.pkl \
   --backend browser --port 9000
 ```
+
+### Task 2.4: Visualize the converted `humanml3d` animation
+
+- see `context/refcode/FlowMDM/explain/howto-interpret-flowmdm-output.md`, the humanml3d output does not include smpl/smplx parameters, only 3D keypoints.
+- flowmdm motion generation script: `context/refcode/FlowMDM/runners/generate-ex.py`
+
+as such, we need to:
+- find out whether global translation and orientation have been computed separately in the original script, and if so, how to extract them.
+
+Status:
+- [x] Confirmed source of global yaw+translation in HumanML3D path: `recover_root_rot_pos()` inside `data_loaders/humanml/scripts/motion_process.py`; added extraction guide `context/hints/howto-extract-humanml-root-transform.md`.
+- [x] Added setup guide `context/hints/howto-setup-humanml3d.md` and wired required HumanML stats:
+  - Created symlinks expected by FlowMDM: `context/refcode/FlowMDM/dataset/HML_Mean_Gen.npy` and `.../HML_Std_Gen.npy` → point to `context/refcode/HumanML3D/HumanML3D/{Mean,Std}.npy`.
+- [x] Updated Pixi tasks to actually use HumanML checkpoint and kept a fallback:
+  - `flowmdm-gen-humanml` → uses `./results/humanml/FlowMDM/model000500000.pt` and HumanML stats.
+  - `flowmdm-gen-humanml-via-babel` → legacy behavior using Babel checkpoint, writes to the same output folder.
+- [x] Verified HumanML3D generation runs and writes to `tmp/flowmdm-out/humanml3d` (`results.npy` shape `[B,22,3,T]`).
+- [ ] Converter from HumanML3D joints → `UnifiedSmplInputs` (pose fitting/IK) pending; plan is to fit SMPL‑X `(global_orient, body_pose, transl)` against T2M joints (see hints for root-only reconstruction as interim).
+
+How to run (HumanML3D):
+```bash
+# Ensure stats are linked once
+cd context/refcode/FlowMDM
+mkdir -p dataset
+ln -sfn ../../HumanML3D/HumanML3D/Mean.npy dataset/HML_Mean_Gen.npy
+ln -sfn ../../HumanML3D/HumanML3D/Std.npy  dataset/HML_Std_Gen.npy
+
+# Generate
+pixi run flowmdm-gen-humanml
+
+# Quick inspect
+pixi run -e dev python - <<'PY'
+import numpy as np
+D = np.load('tmp/flowmdm-out/humanml3d/results.npy', allow_pickle=True).item()
+print(D['motion'].shape, D['motion'].dtype)
+print(D['text'], D['lengths'])
+PY
+```
+
+Notes:
+- The Babel converter `scripts/cvt_flowmdm_babel_to_smpl_animation.py` is not applicable to HumanML3D (no SMPL params). Use fitting to recover SMPL‑X parameters from joints, or a root‑only viewer using recovered quaternion + translation.

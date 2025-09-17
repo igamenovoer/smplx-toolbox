@@ -20,3 +20,6 @@
 [submodule "context/refcode/FlowMDM"]
 	path = context/refcode/FlowMDM
 	url = git@github.com:imsight-forks/FlowMDM.git
+[submodule "context/refcode/HumanML3D"]
+	path = context/refcode/HumanML3D
+	url = https://github.com/EricGuo5513/HumanML3D.git
