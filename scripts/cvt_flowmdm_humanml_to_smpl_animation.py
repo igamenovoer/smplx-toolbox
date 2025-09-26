@@ -38,6 +38,9 @@ import torch
 from smplx_toolbox.core.constants import CoreBodyJoint, ModelType  # type: ignore[import-untyped]
 from smplx_toolbox.core.containers import NamedPose, UnifiedSmplInputs  # type: ignore[import-untyped]
 from smplx_toolbox.vposer.model import _matrot_to_axis_angle  # type: ignore[import-untyped]
+from smplx_toolbox.utils.humanml_mapping import (
+    retarget_t2m_cont6d_to_named_pose,
+)
 
 
 @dataclass
@@ -81,47 +84,52 @@ def _quat_wxyz_to_axis_angle(q: np.ndarray) -> np.ndarray:
         return aa
 
 
-def _cont6d_to_axis_angle_batch(cont6d: np.ndarray) -> np.ndarray:
-    """Convert 6D rotation representation to axis‑angle for a batch of joints.
+def _aa_to_matrix_batch(aa: np.ndarray) -> np.ndarray:
+    """Axis-angle (T,3) to rotation matrices (T,3,3)."""
+    T = int(aa.shape[0])
+    try:
+        from scipy.spatial.transform import Rotation as R  # type: ignore[import-untyped]
+        mats = R.from_rotvec(aa.reshape(-1, 3)).as_matrix().astype(np.float32)
+        return mats.reshape(T, 3, 3)
+    except Exception:
+        mats = []
+        for v in aa:
+            theta = float(np.linalg.norm(v))
+            if theta < 1e-8:
+                mats.append(np.eye(3, dtype=np.float32))
+                continue
+            k = v / theta
+            K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]], dtype=np.float32)
+            Rm = np.eye(3, dtype=np.float32) + np.sin(theta) * K + (1 - np.cos(theta)) * (K @ K)
+            mats.append(Rm)
+        return np.stack(mats, axis=0)
 
-    Input shape: (T, J, 6) → Output shape: (T, J, 3)
-    """
-    assert cont6d.shape[-1] == 6, "Last dim must be 6"
-    T, J, _ = cont6d.shape
-    # cont6d_to_matrix: replicate FlowMDM's implementation with torch
-    q = torch.from_numpy(cont6d).contiguous().float()  # (T, J, 6)
-    x_raw = q[..., 0:3]
-    y_raw = q[..., 3:6]
-    x = torch.nn.functional.normalize(x_raw, dim=-1)
-    y = torch.nn.functional.normalize(y_raw - (x * (x * y_raw).sum(dim=-1, keepdim=True)), dim=-1)
-    z = torch.cross(x, y, dim=-1)
-    mats = torch.stack([x, y, z], dim=-2)  # (T, J, 3, 3)
-    aa = _matrot_to_axis_angle(mats.view(-1, 3, 3)).view(T, J, 3)
-    from typing import cast
-    return cast(np.ndarray, aa.detach().cpu().numpy().astype(np.float32))
+
+def _matrix_to_aa_batch(mats: np.ndarray) -> np.ndarray:
+    """Rotation matrices (T,3,3) to axis-angle (T,3) using torch helper."""
+    T = int(mats.shape[0])
+    m = torch.from_numpy(mats.astype(np.float32)).contiguous().view(-1, 3, 3)
+    aa = _matrot_to_axis_angle(m).view(T, 3)
+    return aa.detach().cpu().numpy().astype(np.float32)
+
+
+def _y_up_to_z_up_rmat() -> np.ndarray:
+    """Return Rx(+90°) rotation matrix to convert Y-up data to Z-up."""
+    ang = np.deg2rad(90.0)
+    c, s = np.cos(ang), np.sin(ang)
+    Rx = np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]], dtype=np.float32)
+    return Rx
 
 
 def _build_named_pose_from_t2m_cont6d(cont6d: np.ndarray, model_type: ModelType = ModelType.SMPLX) -> List[NamedPose]:
-    """Create NamedPose list from T2M 6D rotations.
+    """Create NamedPose list from T2M 6D rotations using explicit mapping.
 
-    cont6d is (T, 22, 6) in T2M order. Root (index 0) is excluded from NamedPose.
+    - Input cont6d: (T, 22, 6) in T2M order (index 0 = Pelvis/root).
+    - Output: NamedPose sequence in toolbox canonical order (CoreBodyJoint
+      without Pelvis). Missing joints (e.g., collars) are set to identity.
     """
-    T = int(cont6d.shape[0])
-    # Convert to axis‑angle
-    aa = _cont6d_to_axis_angle_batch(cont6d)  # (T, 22, 3)
-    body_aa = aa[:, 1:, :]  # (T, 21, 3)
-
-    named: List[NamedPose] = []
-    for t in range(T):
-        npz = NamedPose(model_type=model_type, batch_size=1)
-        body_idx = 0
-        for j in CoreBodyJoint:
-            if j == CoreBodyJoint.PELVIS:
-                continue
-            v = torch.from_numpy(body_aa[t, body_idx]).view(1, 3)
-            npz.set_joint_pose_value(j.value, v)
-            body_idx += 1
-        named.append(npz)
+    q = torch.from_numpy(cont6d).contiguous().float()
+    named = retarget_t2m_cont6d_to_named_pose(q, model_type=model_type)
     return named
 
 
@@ -139,6 +147,14 @@ def _to_unified_inputs(sample: HumanMLSample) -> List[UnifiedSmplInputs]:
 
     global_orient = _quat_wxyz_to_axis_angle(rquat).reshape(T, 3)
     transl = rpos.reshape(T, 3).astype(np.float32)
+
+    # Coordinate frame fix: HumanML3D recoveries are Y-up; SMPL-X expects Z-up.
+    # Convert by applying Rx(+90°): R_zup = Rx * R_yup; t_zup = Rx * t_yup.
+    Rx = _y_up_to_z_up_rmat()
+    R_go = _aa_to_matrix_batch(global_orient)
+    R_go_zup = (Rx @ R_go)  # broadcasts Rx (3,3) over (T,3,3)
+    global_orient = _matrix_to_aa_batch(R_go_zup)
+    transl = (Rx @ transl.T).T.astype(np.float32)
 
     unified: List[UnifiedSmplInputs] = []
     for t in range(T):

@@ -50,8 +50,8 @@ Add a HumanML3D “extended” save path in FlowMDM so that conversion does not 
 - `save meta`: fps=20, text, lengths, stats source, coordinate system notes, kinematic chain id.
 
 #### Tasks
-- [ ] `runners/generate-ex.py`: add a HumanML3D branch to persist `results_ext.npy` alongside `results.npy`.
-- [ ] `save_hml_extended(sample_denorm)`: helper that computes and saves:
+- [x] `runners/generate-ex.py`: add a HumanML3D branch to persist `results_ext.npy` alongside `results.npy`.
+- [x] `save_hml_extended(sample_denorm)`: helper that computes and saves:
   - `feats_denorm` (T,263)
   - `r_quat` (T,4), `r_pos` (T,3)
   - `cont6d_params` (T,22,6) including root (convert root yaw to 6D)
@@ -143,6 +143,7 @@ References
 - Target API: `src/smplx_toolbox/core/unified_model.py`
 - Babel example: `scripts/cvt_flowmdm_babel_to_smpl_animation.py`
 - FlowMDM generator: `context/refcode/FlowMDM/runners/generate-ex.py`
+- Skeleton + mapping reference (T2M ↔ SMPL/SMPL‑X): `context/refcode/FlowMDM/explain/howto-interpret-flowmdm-output.md`
 - HumanML3D decode internals: `context/refcode/FlowMDM/data_loaders/humanml/scripts/motion_process.py`
 - Stats usage (denorm): `context/refcode/FlowMDM/runners/generate.py:93`
 - Related task: see Task 2.4 in `context/tasks/task-anything.md` (HumanML3D visualization and conversion notes)

@@ -105,3 +105,29 @@ Data storage directory:
 - **body_models/**: SMPL-X model files (.pkl format)
 - Model downloads and preprocessing artifacts
 - **vposer/**: VPoser model files `vposer-v2.ckpt` for v2 vposer model checkpoint.
+
+#### More about FlowMDM and HumanML3D
+- `FlowMDM` source code: `context/refcode/FlowMDM/`
+- how to run `FlowMDM`: see `pyproject.toml`, there are tasks defined to run FlowMDM specifically
+- FlowMDM skeleton output format: 
+  - `context/refcode/FlowMDM/explain/howto-interpret-flowmdm-output.md`
+  - `context/refcode/FlowMDM/explain/about-3d-model-keypoint-topology.md`
+  - `context/refcode/FlowMDM/explain/about-smpl-usage-in-flowmdm.md`
+- Our unified smpl model:
+  - source code: `src/smplx_toolbox/core/unified_model.py`
+  - documentation: `docs/unified_model.md`
+  - skeleton mapping: `context/hints/smplx-kb/compare-smpl-skeleton.md`
+
+```toml
+# pyproject.toml, FlowMDM tasks
+
+# Run commands in FlowMDM dir - use for FlowMDM scripts that need relative paths
+flowmdm-exec = { cmd = "cd context/refcode/FlowMDM && pixi run -e latest", description = "Execute arbitrary command in FlowMDM directory with latest environment. Usage: pixi run flowmdm-exec -- <command>" }
+
+# Run commands in workspace with FlowMDM env - use for workspace files needing FlowMDM libraries
+flowmdm-exec-local = { cmd = "pixi run --manifest-path context/refcode/FlowMDM/pyproject.toml -e latest", description = "Execute arbitrary command in current directory with FlowMDM environment. Usage: pixi run flowmdm-exec-local -- <command>" }
+
+# Dataset-specific generation helpers (expanded args; run from workspace root)
+flowmdm-gen-babel = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset babel --export-smpl --export-smplx --smplx-model-path ./body_models --output_dir ../../../tmp/flowmdm-out/babel", description = "Generate Babel motion (SMPL/SMPL-X export) to tmp/flowmdm-out/babel" }
+flowmdm-gen-humanml = { cmd = "pixi run flowmdm-exec -- python -m runners.generate-ex --model_path ./results/babel/FlowMDM/model001300000.pt --instructions_file ./tests/simple-walk/simple_walk_instructions.json --num_repetitions 1 --bpe_denoising_step 125 --guidance_param 1.5 --dataset humanml --output_dir ../../../tmp/flowmdm-out/humanml3d", description = "Generate HumanML3D motion to tmp/flowmdm-out/humanml3d" }
+```
