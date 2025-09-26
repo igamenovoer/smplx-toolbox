@@ -37,6 +37,18 @@ Plan (systematic investigation)
   - From global joints: `T2MSkeleton.from_global_joints(joints_global, root_orient6d, trans)` to obtain local joints for analysis.
   - CLI (optional): `scripts/make_t2m_neutral.py --out tmp/t2m_neutral.pkl` writes a neutral bundle for quick inspection.
 
+Retargeting Strategy (neutral alignment → delta application)
+- Observation: The T2M (HumanML3D) local joint frames differ from SMPL‑X. Directly copying per‑joint AA (or 6D) produces incorrect poses.
+- Approach:
+  1. Fit SMPL‑X to the T2M neutral skeleton by 3D keypoints → obtain `init-smplx-pose` (per‑joint neutral rotations in SMPL‑X space). This captures the bone‑axis/frame alignment implicitly.
+  2. For a new T2M pose, compute per‑joint rotation deltas relative to T2M neutral: Δ_T2M_j = R_T2M_pose_j · (R_T2M_neutral_j)^−1.
+  3. Map deltas into the SMPL‑X local basis via per‑joint conjugation using the neutral alignment:
+     - C_j = R_SMPLX_neutral_j · (R_T2M_neutral_j)^−1 (fixed per joint)
+     - Δ_SMPLX_j = C_j · Δ_T2M_j · C_j^−1
+  4. Compose the final SMPL‑X pose per joint: R_SMPLX_pose_j = Δ_SMPLX_j · R_SMPLX_neutral_j.
+  5. Convert back to AA and assemble `UnifiedSmplInputs` (root handled separately via recovered quaternion + translation with Y‑up→Z‑up fix).
+- This ensures T2M deltas are applied in the correct SMPL‑X local frames, eliminating “lying on ground” and bone twisting artifacts.
+
 Deliverables
 - Converter flags: `--report-mpjpe` and optional `--export-debug` (dump aligned T2M/SMPLX joints).
 - Mapping utils: `apply_bone_axis_correction()` wired behind `--axis-corr`.

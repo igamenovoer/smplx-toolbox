@@ -46,6 +46,9 @@ Next up under this priority:
 
 ## Currently Working / Recent Changes
 
+Current Working Task
+- See: `context/tasks/task-fix-humanml-to-smplx-error.md` (HumanML3D → SMPL‑X retargeting: neutral alignment + delta application; orientation and mapping validation.)
+
 Keypoint-Based Fitting (completed; validate on real data next)
 - [x] Loss builders (under `src/smplx_toolbox/optimization/`)
   - [x] `KeypointMatchLossBuilder` (3D, unified names + packed native order)

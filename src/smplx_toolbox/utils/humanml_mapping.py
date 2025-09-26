@@ -23,6 +23,7 @@ from attrs import validators as v
 from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
 from smplx_toolbox.core.containers import NamedPose
 from smplx_toolbox.vposer.model import _matrot_to_axis_angle
+from smplx_toolbox.visualization.utils import add_connection_lines, add_axes
 
 
 def humanml_joint_mapping() -> Tuple[List[CoreBodyJoint], List[Optional[int]]]:
@@ -242,6 +243,18 @@ T2M_KINEMATIC_CHAIN: List[List[int]] = [
     [9, 14, 17, 19, 21],
     [9, 13, 16, 18, 20],
 ]
+
+
+def _t2m_bone_connections() -> List[Tuple[int, int]]:
+    """Return parent-child bone connections for the 22-joint T2M skeleton.
+
+    Derived by connecting consecutive joints within each kinematic chain.
+    """
+    edges: List[Tuple[int, int]] = []
+    for chain in T2M_KINEMATIC_CHAIN:
+        for i in range(1, len(chain)):
+            edges.append((chain[i - 1], chain[i]))
+    return edges
 
 
 def _cont6d_to_matrix_np(cont6d: np.ndarray) -> np.ndarray:
@@ -464,3 +477,134 @@ def create_neutral_t2m_skeleton() -> T2MSkeleton:
         root_orient6d=np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32),
         trans=np.zeros((3,), dtype=np.float32),
     )
+
+
+    # end create_neutral_t2m_skeleton
+
+    
+def _apply_root_to_local(joints_local: np.ndarray, root_orient6d: np.ndarray, trans: np.ndarray) -> np.ndarray:
+    """Compose local joints with root transform → global joints.
+
+    joints_global = R(root_orient6d) @ joints_local.T + trans[:, None]
+    """
+    R_root = _cont6d_to_matrix_np(root_orient6d.reshape(1, 6))[0]
+    return (R_root @ joints_local.T).T + trans.reshape(1, 3)
+
+
+def _safe_add_labels(pl, points: np.ndarray, labels: List[str], *, font_size: int = 10):
+    try:
+        return pl.add_point_labels(
+            points,
+            labels,
+            font_size=font_size,
+            point_size=0,
+            shape_opacity=0,
+            always_visible=True,
+        )
+    except TypeError:
+        return pl.add_point_labels(
+            points,
+            labels,
+            font_size=font_size,
+            point_size=0,
+            shape_opacity=0,
+        )
+
+
+def _auto_scale(points: np.ndarray, fallback: float = 0.15) -> float:
+    """Heuristic scale (meters) based on spatial extent for axes/labels."""
+    if points.size == 0:
+        return fallback
+    mins = points.min(axis=0)
+    maxs = points.max(axis=0)
+    extent = float(np.linalg.norm(maxs - mins))
+    return max(fallback, 0.1 * extent)
+
+
+def _pairs_from_edges(points: np.ndarray, edges: List[Tuple[int, int]]) -> Tuple[np.ndarray, np.ndarray]:
+    a = np.array([points[i] for i, _ in edges], dtype=float)
+    b = np.array([points[j] for _, j in edges], dtype=float)
+    return a, b
+
+
+def _require_pyvista():
+    import importlib
+
+    if importlib.util.find_spec("pyvista") is None:
+        raise ImportError("pyvista is required for T2MSkeleton.show(); install via 'pip install pyvista'")
+    import pyvista as pv  # noqa: F401
+    return pv
+
+
+@define(kw_only=True)
+class _ShowActors:
+    points_actor: object | None = None
+    labels_actor: object | None = None
+    bones_actor: object | None = None
+    axes_actors: dict | None = None
+
+
+def _make_plotter(background: bool = False):
+    pv = _require_pyvista()
+    if background:
+        try:
+            import pyvistaqt as pvqt  # type: ignore
+
+            return pvqt.BackgroundPlotter()
+        except Exception:
+            return pv.Plotter()
+    return pv.Plotter()
+
+
+def _add_t2m_skeleton_to_plotter(
+    pl,
+    joints_global: np.ndarray,
+    *,
+    labels: bool = True,
+    label_font_size: int = 10,
+) -> _ShowActors:
+    edges = _t2m_bone_connections()
+    a, b = _pairs_from_edges(joints_global, edges)
+    actors = _ShowActors()
+    actors.bones_actor = add_connection_lines(pl, a, b, color=(0.2, 0.6, 0.9), line_width=3)
+    try:
+        actors.points_actor = pl.add_points(
+            joints_global,
+            render_points_as_spheres=True,
+            point_size=10,
+            color=(1.0, 0.9, 0.1),
+        )
+    except TypeError:
+        actors.points_actor = pl.add_mesh(joints_global, color=(1.0, 0.9, 0.1))
+
+    if labels:
+        actors.labels_actor = _safe_add_labels(pl, joints_global, list(T2M_JOINT_NAMES), font_size=label_font_size)
+    return actors
+
+
+# Attach method to class after its definition
+def _t2m_show(self: "T2MSkeleton", *, background: bool = False, show_axes: bool = True, labels: bool = True):
+    """Visualize the T2M skeleton in PyVista.
+
+    Parameters
+    ----------
+    background : bool, optional
+        If True, use a non-blocking BackgroundPlotter when available.
+    show_axes : bool, optional
+        Whether to render axes at the root joint.
+    labels : bool, optional
+        Whether to draw joint name labels next to joints.
+    """
+    pv = _require_pyvista()
+    pl = _make_plotter(background=background)
+    joints_g = _apply_root_to_local(self.joints_local, self.root_orient6d, self.trans)
+    _add_t2m_skeleton_to_plotter(pl, joints_g, labels=labels)
+    if show_axes:
+        scale = _auto_scale(joints_g)
+        add_axes(pl, joints_g[0], scale=scale, labels=True)
+    pl.add_text("T2M Skeleton", font_size=10)
+    pl.show()
+
+
+# Bind as a method of T2MSkeleton
+setattr(T2MSkeleton, "show", _t2m_show)
