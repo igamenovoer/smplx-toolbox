@@ -19,10 +19,14 @@ import torch
 import numpy as np
 from attrs import define, field
 from attrs import validators as v
+try:  # Prefer SciPy for ndarray rotation utilities when available
+    from scipy.spatial.transform import Rotation as sR  # type: ignore
+except Exception:  # pragma: no cover - optional dependency guard
+    sR = None  # type: ignore[assignment]
 
 from smplx_toolbox.core.constants import CoreBodyJoint, ModelType
 from smplx_toolbox.core.containers import NamedPose
-from smplx_toolbox.vposer.model import _matrot_to_axis_angle
+import kornia.geometry.conversions as Kconv
 from smplx_toolbox.visualization.utils import add_connection_lines, add_axes
 
 
@@ -130,7 +134,10 @@ def _cont6d_to_axis_angle(cont6d: torch.Tensor) -> torch.Tensor:
     y = torch.nn.functional.normalize(y, dim=-1)
     z = torch.cross(x, y, dim=-1)
     mats = torch.stack([x, y, z], dim=-2)  # (..., 3, 3)
-    aa = _matrot_to_axis_angle(mats.reshape(-1, 3, 3)).reshape(mats.shape[:-2] + (3,))
+    # Kornia expects (...,3,3) and returns (...,3) axis-angle rotvec
+    aa = Kconv.rotation_matrix_to_axis_angle(mats.reshape(-1, 3, 3)).reshape(
+        mats.shape[:-2] + (3,)
+    )
     return aa.squeeze(0) if squeeze else aa
 
 
@@ -271,8 +278,12 @@ def _cont6d_to_matrix_np(cont6d: np.ndarray) -> np.ndarray:
     z = z / (np.linalg.norm(z, axis=-1, keepdims=True) + 1e-8)
     y = np.cross(z, x)
     # Stack as rotation matrix with columns [x y z]
-    mat = np.stack([x, y, z], axis=-1)
-    return mat.astype(np.float32)
+    mat = np.stack([x, y, z], axis=-1).astype(np.float32)
+    # Optionally re-orthonormalize via SciPy for numerical stability
+    if sR is not None:
+        flat = mat.reshape(-1, 3, 3)
+        mat = sR.from_matrix(flat).as_matrix().astype(np.float32).reshape(mat.shape)
+    return mat
 
 
 def _parents_from_chain(n_joints: int, chains: List[List[int]]) -> List[int]:
@@ -339,12 +350,13 @@ class T2MSkeleton:
     """Generic T2M (HumanML3D) skeleton sample with explicit local coordinates.
 
     This container stores ``joints_local`` in the joint-local coordinate frame.
-    To obtain global/world coordinates, apply the rigid transform composed from
-    ``root_orient6d`` and ``trans`` as:
+    To obtain global/world coordinates, apply the similarity transform composed
+    from ``scale`` (per‑axis), ``root_orient6d`` (rotation), and ``trans`` as:
 
-        joints_global = R(root_orient6d) @ joints_local.T + trans[:, None]
+        joints_global = R(root_orient6d) @ (S(scale) @ joints_local.T) + trans[:, None]
 
     where ``R(·)`` converts the 6D rotation representation to a 3x3 matrix.
+    and ``S(·)`` is a diagonal scaling matrix built from the 3‑vector ``scale``.
 
     Important
     - Users providing joint positions must supply local coordinates. If you
@@ -361,9 +373,11 @@ class T2MSkeleton:
         (6,) root orientation in 6D representation.
     trans : np.ndarray
         (3,) root translation.
+    scale : np.ndarray
+        (3,) global scale applied before the root rotation (default: ones).
     joint_names : list[str]
         T2M joint names in order.
-    coordinate_system : str
+    up_dir_type : str
         Coordinate system tag: one of ``x_up|y_up|z_up`` (default: ``y_up``).
     """
 
@@ -380,6 +394,7 @@ class T2MSkeleton:
         factory=lambda: np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=np.float32)
     )
     trans: np.ndarray = field(factory=lambda: np.zeros((3,), dtype=np.float32))
+    scale: np.ndarray = field(factory=lambda: np.ones((3,), dtype=np.float32))
     joint_names: List[str] = field(factory=lambda: list(T2M_JOINT_NAMES))
     up_dir_type: str = field(
         default="y_up",
@@ -395,6 +410,7 @@ class T2MSkeleton:
         pose6d: Optional[np.ndarray] = None,
         root_orient6d: Optional[np.ndarray] = None,
         trans: Optional[np.ndarray] = None,
+        scale: Optional[np.ndarray] = None,
         up_dir_type: str = "y_up",
         joint_names: Optional[List[str]] = None,
     ) -> "T2MSkeleton":
@@ -410,7 +426,9 @@ class T2MSkeleton:
             (6,) root orientation in 6D. Defaults to identity rotation if None.
         trans : np.ndarray, optional
             (3,) translation vector. Defaults to zeros if None.
-        coordinate_system : str, optional
+        scale : np.ndarray, optional
+            (3,) global scale applied before rotation. Defaults to ones.
+        up_dir_type : str, optional
             One of ``x_up|y_up|z_up``. Default: ``y_up``.
         joint_names : list[str], optional
             Joint names in order. Defaults to standard T2M names.
@@ -419,7 +437,7 @@ class T2MSkeleton:
         -------
         T2MSkeleton
             Skeleton where ``joints_local`` is computed as
-            ``R(root)^T @ (joints_global - trans)``.
+            ``S(scale)^{-1} · R(root)^T · (joints_global - trans)``.
         """
         J = 22
         g = np.asarray(joints_global, dtype=np.float32)
@@ -442,18 +460,46 @@ class T2MSkeleton:
         else:
             trans = np.asarray(trans, dtype=np.float32)
 
+        if scale is None:
+            scale = np.ones((3,), dtype=np.float32)
+        else:
+            scale = np.asarray(scale, dtype=np.float32)
+
         # Invert root transform: local = R^T * (global - t)
         R_root = _cont6d_to_matrix_np(root_orient6d.reshape(1, 6))[0]
-        local = (R_root.T @ (g - trans).T).T.astype(np.float32)
+        # Apply inverse scale as part of inverse similarity transform
+        invS = np.diag(1.0 / (scale.astype(np.float32) + 1e-8))
+        local = (invS @ (R_root.T @ (g - trans).T)).T.astype(np.float32)
 
         return cls(
             joints_local=local,
             pose6d=pose6d,
             root_orient6d=root_orient6d,
             trans=trans,
+            scale=scale,
             joint_names=list(T2M_JOINT_NAMES) if joint_names is None else joint_names,
             up_dir_type=up_dir_type,
         )
+
+    @property
+    def world_transform(self) -> np.ndarray:
+        """Return the 4x4 left‑multiply world transform matrix.
+
+        The transform composes translation, rotation, and per‑axis scale as:
+
+            T = T_trans · T_rot · T_scale
+
+        so that, for column 4‑vectors X = [x;1], X' = T · X.
+        """
+        R_root = _cont6d_to_matrix_np(self.root_orient6d.reshape(1, 6))[0]
+        sx, sy, sz = [float(v) for v in np.asarray(self.scale, dtype=np.float32).reshape(3)]
+        S = np.diag([sx, sy, sz, 1.0]).astype(np.float32)
+        T_rot = np.eye(4, dtype=np.float32)
+        T_rot[:3, :3] = R_root.astype(np.float32)
+        T_trn = np.eye(4, dtype=np.float32)
+        T_trn[:3, 3] = np.asarray(self.trans, dtype=np.float32).reshape(3)
+        T = (T_trn @ T_rot) @ S
+        return T
 
 
 def create_neutral_t2m_skeleton() -> T2MSkeleton:
@@ -482,13 +528,20 @@ def create_neutral_t2m_skeleton() -> T2MSkeleton:
     # end create_neutral_t2m_skeleton
 
     
-def _apply_root_to_local(joints_local: np.ndarray, root_orient6d: np.ndarray, trans: np.ndarray) -> np.ndarray:
+def _apply_root_to_local(
+    joints_local: np.ndarray, root_orient6d: np.ndarray, trans: np.ndarray, scale: Optional[np.ndarray] = None
+) -> np.ndarray:
     """Compose local joints with root transform → global joints.
 
-    joints_global = R(root_orient6d) @ joints_local.T + trans[:, None]
+    joints_global = R(root_orient6d) @ (S(scale) @ joints_local.T) + trans[:, None]
     """
     R_root = _cont6d_to_matrix_np(root_orient6d.reshape(1, 6))[0]
-    return (R_root @ joints_local.T).T + trans.reshape(1, 3)
+    if scale is None:
+        scaled = joints_local.astype(np.float32)
+    else:
+        s = np.asarray(scale, dtype=np.float32).reshape(1, 3)
+        scaled = (joints_local.astype(np.float32) * s)
+    return (R_root @ scaled.T).T + trans.reshape(1, 3)
 
 
 def _safe_add_labels(pl, points: np.ndarray, labels: List[str], *, font_size: int = 10):
@@ -597,7 +650,7 @@ def _t2m_show(self: "T2MSkeleton", *, background: bool = False, show_axes: bool 
     """
     pv = _require_pyvista()
     pl = _make_plotter(background=background)
-    joints_g = _apply_root_to_local(self.joints_local, self.root_orient6d, self.trans)
+    joints_g = _apply_root_to_local(self.joints_local, self.root_orient6d, self.trans, self.scale)
     _add_t2m_skeleton_to_plotter(pl, joints_g, labels=labels)
     if show_axes:
         scale = _auto_scale(joints_g)
