@@ -123,6 +123,50 @@ pixi run -e dev python -c "import torch; print(f'PyTorch {torch.__version__}'); 
 
 For detailed PyTorch installation instructions, see [docs/pytorch-installation.md](docs/pytorch-installation.md).
 
+## GenericSkeleton (MJCF) and Topology Graphs
+
+The toolbox provides a lightweight MJCF-backed skeleton wrapper for reusable motion/retargeting workflows:
+
+```python
+from smplx_toolbox.core.skeleton import GenericSkeleton
+import networkx as nx
+
+# Load an MJCF skeleton (human rigs typically have only actuated joints)
+skel = GenericSkeleton.from_mjcf_file("path/to/skeleton.xml", name="humanoid")
+
+# Names and base
+print("base:", skel.base_link_name)
+print("joints:", skel.joint_names)   # preferred canonical set for human workflows
+print("links:", skel.link_names)     # optional; segment/geometry-centric tasks
+
+# Forward kinematics (dict[link_name -> 4x4])
+cfg = {j: 0.0 for j in skel.joint_names}
+fk_links = skel.link_fk(cfg)
+
+# 1) Joint topology (nodes = joints). Each edge carries the child link name.
+JG = skel.get_joint_topology()
+order_j = list(nx.topological_sort(JG))
+for parent, child in JG.edges():
+    child_link = JG[parent][child]["link"]  # child body (link) between joints
+    print(parent, "->", child, "via link:", child_link)
+
+# 2) Link topology (nodes = links). Each edge carries the connecting joint name(s).
+LG = skel.get_link_topology()
+order_l = list(nx.topological_sort(LG))
+for parent_link, child_link in LG.edges():
+    joint_names = LG[parent_link][child_link]["joints"]
+    print(parent_link, "->", child_link, "via joints:", joint_names)
+
+# 3) Full mixed topology (links and joints). Nodes have node_type: "link" or "joint".
+FG = skel.get_full_topology()
+for n, data in FG.nodes(data=True):
+    print(n, data.get("node_type"))
+```
+
+Notes
+- Human skeleton pipelines typically use joint names (pelvis/hip/wrist, etc.); link names are available when you need segment-level metadata/geometry.
+- The root/global pose in SMPL(-X) maps to the base link world transform (apply as an external SE(3) after FK).
+
 ## Contributing
 
 We welcome contributions from the community! Whether you're interested in:
